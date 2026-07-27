@@ -1,0 +1,6 @@
+COMPONENT_ADD_INCLUDEDIRS := include
+COMPONENT_REQUIRES := log
+
+CFLAGS += -DDST_IP=\"$(strip $(DST_IP))\"
+CFLAGS += -DDATA_PORT=$(strip $(DATA_PORT))
+CFLAGS += -DLOG_PORT=$(strip $(LOG_PORT))

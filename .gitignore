@@ -1,0 +1,16 @@
+# Ficheros intermedios de Vim
+*.swp
+
+# Ignorar el fichero de respaldo de sdkconfig
+sdkconfig.old
+
+# Secretos en credentials.mk
+credentials.mk
+
+# Ficheros de Eclipse
+.project
+.cproject
+.settings/
+
+# Ficheros de compilación
+build/

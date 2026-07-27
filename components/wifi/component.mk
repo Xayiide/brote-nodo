@@ -1,0 +1,5 @@
+COMPONENT_ADD_INCLUDEDIRS := include
+COMPONENT_SRCDIRS := .
+
+CFLAGS += -DWIFI_SSID=\"$(strip $(WIFI_SSID))\"
+CFLAGS += -DWIFI_PASS=\"$(strip $(WIFI_PASS))\"
