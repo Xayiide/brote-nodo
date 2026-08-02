@@ -13,6 +13,7 @@
 #include "wifi.h"
 #include "net.h"
 #include "veml7700.h"
+#include "msg_api.h"
 
 #if !defined(DST_IP)
 #error "DST_IP no está definido"
@@ -49,7 +50,6 @@ void app_main(void)
 	ESP_LOGI(TAG, "IP:DATA - %s:%d\n", DST_IP, DATA_PORT);
 	ESP_LOGI(TAG, "IP:LOG  - %s:%d\n", DST_IP, LOG_PORT);
 
-
 	wifi_init_sta();
 	net_init(DST_IP, (uint16_t) DATA_PORT, (uint16_t) LOG_PORT);
 
@@ -76,6 +76,8 @@ void app_main(void)
 
 		printf("Lux:   %d.%04d lx\n", lx_int, lx_dec);
 		printf("White: %d.%04d lx\n", wh_int, wh_dec);
+
+		msg_send_light_sample(lx, wh);
 
 		vTaskDelay(2000 / portTICK_PERIOD_MS);
 	}
