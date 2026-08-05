@@ -8,5 +8,8 @@
 enum msg_st msg_build_light_sample(struct msg_frame *frame,
                                    float lx,
                                    float wh);
+enum msg_st msg_build_hum_temp(struct msg_frame *frame,
+                               float hum,
+                               float temp);
 
 #endif /* MSG_BUILDER_H_ */

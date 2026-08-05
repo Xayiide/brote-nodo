@@ -13,6 +13,7 @@
 #include "wifi.h"
 #include "net.h"
 #include "veml7700.h"
+#include "am2315c.h"
 #include "msg_api.h"
 
 #if !defined(DST_IP)
@@ -57,8 +58,14 @@ void app_main(void)
 	veml7700_init();
 	veml7700_add_dev(0x10, 1000);
 
+	am2315c_init();
+	am2315c_add_dev(0x38, 2000);
+
 	float lx, wh;
 	int lx_int, lx_dec, wh_int, wh_dec;
+
+	float hum, temp;
+	int hum_int, hum_dec, temp_int, temp_dec;
 
 	while (1) {
 		lx = veml7700_lux(0x10);
@@ -74,10 +81,31 @@ void app_main(void)
 		if (wh_dec < 0)
 			wh_dec = -wh_dec;
 
+		printf(" ======= VEML7700 ======= \n");
 		printf("Lux:   %d.%04d lx\n", lx_int, lx_dec);
 		printf("White: %d.%04d lx\n", wh_int, wh_dec);
+		printf(" ======================== \n");
+
+		hum  = am2315c_hum(0x38);
+		temp = am2315c_temp(0x38);
+
+		hum_int = (int) hum;
+		hum_dec = (int) ((hum - hum_int) * 10000);
+		if (hum_dec < 0)
+			hum_dec = -hum_dec;
+
+		temp_int = (int) temp;
+		temp_dec = (int) ((temp - temp_int) * 10000);
+		if (temp_dec < 0)
+			temp_dec = -temp_dec;
+
+		printf(" ======= VEML7700 ======= \n");
+		printf("hum:  %d.%04d %%\n", hum_int, hum_dec);
+		printf("temp: %d.%04d ºC\n", temp_int, temp_dec);
+		printf(" ======================== \n");
 
 		msg_send_light_sample(lx, wh);
+		msg_send_hum_temp(hum, temp);
 
 		vTaskDelay(2000 / portTICK_PERIOD_MS);
 	}

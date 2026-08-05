@@ -8,6 +8,7 @@
 
 enum msg_type {
 	MSG_TYPE_LIGHT_SAMPLE,
+	MSG_TYPE_HUM_TEMP,
 	MSG_TYPE_LOG,
 };
 
@@ -21,7 +22,7 @@ enum msg_st {
 
 struct msg_hdr {
 	uint8_t  type;
-	uint8_t  id;
+	uint8_t  syn;
 	uint16_t src_id;
 	//uint32_t timestamp;
 	uint16_t body_len;

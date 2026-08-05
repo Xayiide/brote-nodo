@@ -1,5 +1,6 @@
 #include <stdint.h> /* uint */
 #include <stdbool.h> /* bool */
+#include <stddef.h> /* NULL */
 
 #include <FreeRTOS.h> /* Es necesario ponerlo primero */
 #include <task.h>    /* xTaskGetTickCount(), vTaskDelay */
@@ -149,12 +150,12 @@ void veml7700_init(void)
 	veml7700.ndevs = 0;
 	for (i = 0; i < MAX_NUM_DEV; i++) {
 		dev = &veml7700.devs[i];
-		dev->addr = NULL_ADDR;
-		dev->st   = DEV_READY_ST;
+		dev->addr        = NULL_ADDR;
+		dev->st          = DEV_READY_ST;
 		dev->start_ticks = xTaskGetTickCount();
 		dev->limit_ticks = pdMS_TO_TICKS(RD_PERIOD_MS);
-		dev->lx = 0;
-		dev->wh = 0;
+		dev->lx          = 0;
+		dev->wh          = 0;
 		get_default_config(dev);
 	}
 
@@ -199,7 +200,8 @@ void veml7700_add_dev(uint8_t addr, uint16_t period_ms)
 
 
 
-float veml7700_lux(uint8_t addr) {
+float veml7700_lux(uint8_t addr)
+{
 	float res = -1;
 	uint8_t i;
 
@@ -214,7 +216,8 @@ float veml7700_lux(uint8_t addr) {
 	return res;
 }
 
-float veml7700_white(uint8_t addr) {
+float veml7700_white(uint8_t addr)
+{
 	float res = -1;
 	uint8_t i;
 
@@ -266,7 +269,7 @@ void main_task(void *p)
 {
 	TickType_t min_wait;
 
-	for(;;) {
+	for (;;) {
 		min_wait = get_min_wait();
 
 		if (min_wait > 0) {
@@ -301,10 +304,9 @@ void read_all_devs(void)
 			cfg_changed = autorange(dev, als_count);
 			if (cfg_changed) {
 				/* Si ha cambiado la config:
-				 * 1. Configuramos el sensor con la nueva config
-				 * 2. Establecemos temporizador a esperar IT_TIME
-				 * 3. Reiniciamos temporizador
-				 * 4. Pasamos a estado WAIT_IT
+				 * 1. Configurar el sensor con la nueva config
+				 * 2. Establecer temporizador a esperar IT_TIME y reiniciarlo
+				 * 3. Transitar a estado WAIT_IT
 				 */
 				set_and_send_config(dev);
 				timer_restart(dev, it_to_ms(dev->params.it));
@@ -318,12 +320,12 @@ void read_all_devs(void)
 				dev->wh = white_count * dev->params.res;
 
 				timer_restart(dev, RD_PERIOD_MS);
-				/* No cambiamos estado porque no hemos cambiado la
-				 * configuración y no necesitamos esperar IT_TIME */
+				/* No se ha modificado la config: no hace falta cambiar de
+				 * estado ni esperar IT_TIME */
 			}
 			break;
 		case DEV_WAIT_IT_ST:
-			/* Esperamos a ver si ha pasado ya IT_TIME y podemos consumir
+			/* Esperar a ver si ha pasado ya IT_TIME y se puede consumir
 			 * la lectura */
 			read_reg(dev, CMD_ALS_DATA, &als_count);
 			read_reg(dev, CMD_WHITE_DATA, &white_count);
@@ -331,15 +333,15 @@ void read_all_devs(void)
 			dev->lx = als_count * dev->params.res;
 			dev->wh = als_count * dev->params.res;
 
-			/* Como ya ha pasado el IT_TIME, vuelvo a esperar el tiempo normal
-			 * configurado, corrigiendo la desviación acumulada:
-			 * Si he esperado 100MS de IT, y ahora espero 1000 de tiempo
-			 * configurado, demoraré 1100 ms en leer en lugar de 1000. Esa
-			 * desviación se acumula con cada nueva configuración.
-			 * Pero no puedo hacer simplemente
+			/* Como ya ha pasado el IT_TIME, se vuelve a esperar el tiempo
+			 * normal configurado, corrigiendo la desviación acumulada:
+			 * Si se ha esperado 100MS de IT, y ahora se espera 1000 de tiempo
+			 * configurado, la demora será de 1100 ms en leer, en lugar de
+			 * 1000. Esa desviación se acumula con cada nueva configuración.
+			 * Pero no se puede hacer simplemente
 			 * pit_ms_to_ticks(RD_PERIOD_MS - it_to_ms(dev->params.it)) porque
 			 * si RD_PERIOD_MS es pequeño, la operación desbordaría. Así que
-			 * calculo los milisegundos restantes */
+			 * se calculan los milisegundos restantes */
 			it_ms = it_to_ms(dev->params.it);
 			remaining_ms = (it_ms < RD_PERIOD_MS) ? (RD_PERIOD_MS - it_ms) : 0;
 			timer_restart(dev, remaining_ms);
@@ -376,7 +378,6 @@ TickType_t get_min_wait(void)
 			min_wait = remaining;
 	}
 
-
 	return min_wait;
 }
 
@@ -396,7 +397,7 @@ bool autorange(struct veml7700_dev *dev, uint16_t als_count)
 			//changed = 1;
 		}
 		else {
-			/* Ganancia está al máximo. Incrementamos IT si no está al máximo */
+			/* Ganancia está al máximo. Incrementar IT si no está al máximo */
 			if (dev->params.it != ALS_IT_800MS) {
 				dev->params.it = it_values[it_idx - 1];
 				//changed = 1;
@@ -411,7 +412,7 @@ bool autorange(struct veml7700_dev *dev, uint16_t als_count)
 			//changed = 1;
 		}
 		else {
-			/* It está al mínimo. Reducimos ganancia si no está al mínimo */
+			/* It está al mínimo. Reducir ganancia si no está al mínimo */
 			if (dev->params.gain != ALS_GAIN_1_8) {
 				dev->params.gain = gain_values[gain_idx + 1];
 				//changed = 1;

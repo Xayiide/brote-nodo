@@ -23,8 +23,8 @@ int32_t msg_serialize(struct msg_frame *frame, uint8_t *body, uint16_t len)
 	body[off] = frame->hdr.type;
 	off += sizeof(frame->hdr.type);
 
-	body[off] = frame->hdr.id;
-	off += sizeof(frame->hdr.id);
+	body[off] = frame->hdr.syn;
+	off += sizeof(frame->hdr.syn);
 
 	pack_be_16(body + off, frame->hdr.src_id);
 	off += sizeof(frame->hdr.src_id);
