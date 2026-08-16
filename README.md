@@ -17,3 +17,9 @@ En el directorio raíz tiene que haber un fichero `credentials.mk` donde se defi
 - `DST_IP`: IP destino a la que enviar datos y logs.
 - `DATA_PORT`: Puerto al que se enviarán los datos.
 - `LOG_PORT`: Puerto al que se enviarán los logs.
+
+# Compilación para diferentes nodos
+
+Dependiendo de la configuración que se quiera dar al nodo, se tendrá que compilar con una bandera diferente. Por defecto, la bandera es "terraza". Para cambiar la bandera, haces:
+1. `make NODE=bandera`, o bien
+2. `make flash NODE=bandera`

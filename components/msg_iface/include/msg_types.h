@@ -21,9 +21,10 @@ enum msg_st {
 };
 
 struct msg_hdr {
-	uint8_t  type;
+	uint8_t  msg_id;
 	uint8_t  syn;
-	uint16_t src_id;
+	uint16_t node_id;
+	uint16_t sensor_id;
 	//uint32_t timestamp;
 	uint16_t body_len;
 	uint16_t version;

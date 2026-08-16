@@ -1,5 +1,6 @@
 #include <stddef.h> /* NULL */
 
+#include "node_config.h"
 #include "msg_builder.h"
 #include "msg_types.h"
 #include "byte_utils.h"
@@ -22,12 +23,12 @@ enum msg_st msg_build_light_sample(struct msg_frame *frame,
 	pack_be_float(frame->body + off, wh);
 	off += sizeof(float);
 
-	frame->hdr.type = MSG_TYPE_LIGHT_SAMPLE;
-	frame->hdr.syn = 1; // TODO: rellenar el ID
-	frame->hdr.src_id = 2; // TODO: rellenar el SRC_ID
-	//frame->hdr.timestamp = 0;
+	frame->hdr.msg_id = MSG_TYPE_LIGHT_SAMPLE;
+	frame->hdr.syn = 0; /* TODO */
+	frame->hdr.node_id = CFG_NODE_ID;
+	frame->hdr.sensor_id = CFG_SENSOR_ID_LIGHT;
 	frame->hdr.body_len = off;
-	frame->hdr.version = 3; // TODO: rellenar la VERSION
+	frame->hdr.version = 0;
 
 exit:
 	return st;
@@ -50,12 +51,12 @@ enum msg_st msg_build_hum_temp(struct msg_frame *frame,
 	pack_be_float(frame->body + off, temp);
 	off += sizeof(float);
 
-	frame->hdr.type = MSG_TYPE_HUM_TEMP;
-	frame->hdr.syn = 2; // TODO: rellenar el ID
-	frame->hdr.src_id = 2; // TODO: rellenar el SRC_ID
-	//frame->hdr.timestamp = 0;
+	frame->hdr.msg_id = MSG_TYPE_HUM_TEMP;
+	frame->hdr.syn = 0; /* TODO */
+	frame->hdr.node_id = CFG_NODE_ID;
+	frame->hdr.sensor_id = CFG_SENSOR_ID_TEMP_HUM;
 	frame->hdr.body_len = off;
-	frame->hdr.version = 3; // TODO: rellenar la VERSION
+	frame->hdr.version = 0;
 
 exit:
 	return st;

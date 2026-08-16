@@ -99,10 +99,10 @@ void app_main(void)
 		if (temp_dec < 0)
 			temp_dec = -temp_dec;
 
-		printf(" ======= VEML7700 ======= \n");
+		printf(" ======= AM2108C ======= \n");
 		printf("hum:  %d.%04d %%\n", hum_int, hum_dec);
 		printf("temp: %d.%04d ºC\n", temp_int, temp_dec);
-		printf(" ======================== \n");
+		printf(" ======================= \n");
 
 		msg_send_light_sample(lx, wh);
 		msg_send_hum_temp(hum, temp);
