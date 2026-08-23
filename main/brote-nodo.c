@@ -81,11 +81,6 @@ void app_main(void)
 		if (wh_dec < 0)
 			wh_dec = -wh_dec;
 
-		printf(" ======= VEML7700 ======= \n");
-		printf("Lux:   %d.%04d lx\n", lx_int, lx_dec);
-		printf("White: %d.%04d lx\n", wh_int, wh_dec);
-		printf(" ======================== \n");
-
 		hum  = am2315c_hum(0x38);
 		temp = am2315c_temp(0x38);
 
@@ -99,13 +94,23 @@ void app_main(void)
 		if (temp_dec < 0)
 			temp_dec = -temp_dec;
 
-		printf(" ======= AM2108C ======= \n");
-		printf("hum:  %d.%04d %%\n", hum_int, hum_dec);
-		printf("temp: %d.%04d ºC\n", temp_int, temp_dec);
-		printf(" ======================= \n");
+        if (wh != 0.0 && lx != 0.0) {
+		    msg_send_light_sample(lx, wh);
+            printf("VEML7700: Sample sent: ");
+        } else {
+            printf("VEML7700: Not sending sample: ");
+        }
+        printf("[ %d.%04d lx] [ %d.%04d wh]\n",
+                lx_int, lx_dec, wh_int, wh_dec);
 
-		msg_send_light_sample(lx, wh);
-		msg_send_hum_temp(hum, temp);
+        if (hum != 0.0 && temp != 0.0) {
+		    msg_send_hum_temp(hum, temp);
+            printf("AM2108C : Sample sent: ");
+        } else {
+            printf("AM2108C: Not sending sample: ");
+        }
+        printf("[ %d.%04d %% hum] [ %d.%04d ºC]\n",
+                hum_int, hum_dec, temp_int, temp_dec);
 
 		vTaskDelay(2000 / portTICK_PERIOD_MS);
 	}
