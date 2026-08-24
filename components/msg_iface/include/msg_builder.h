@@ -6,8 +6,7 @@
 #include "msg_types.h"
 
 enum msg_st msg_build_light_sample(struct msg_frame *frame,
-                                   float lx,
-                                   float wh);
+                                   struct light_sample *sample);
 enum msg_st msg_build_hum_temp(struct msg_frame *frame,
                                float hum,
                                float temp);

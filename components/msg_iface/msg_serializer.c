@@ -8,35 +8,27 @@
 
 int32_t msg_serialize(struct msg_frame *frame, uint8_t *body, uint16_t len)
 {
-	int32_t ret = 0;
-	enum msg_st st = MSG_OK;
+	int32_t ret = -1;
 	size_t off = 0;
 	uint16_t needed;
 
-	needed = sizeof(frame->hdr) + frame->hdr.body_len;
 
-	if (frame == NULL || body == NULL || len < needed) {
-		st = MSG_ERR_NULL_PARAM;
+	if (frame == NULL || body == NULL) {
 		goto exit;
 	}
 
-	body[off] = frame->hdr.msg_id;
-	off += sizeof(frame->hdr.msg_id);
+	needed = sizeof(frame->hdr) + frame->hdr.body_len;
 
-	body[off] = frame->hdr.syn;
-	off += sizeof(frame->hdr.syn);
+	if (len < needed) {
+		goto exit;
+	}
 
-	pack_be_16(body + off, frame->hdr.node_id);
-	off += sizeof(frame->hdr.node_id);
-
-	pack_be_16(body + off, frame->hdr.sensor_id);
-	off += sizeof(frame->hdr.sensor_id);
-
-	pack_be_16(body + off, frame->hdr.body_len);
-	off += sizeof(frame->hdr.body_len);
-
-	pack_be_16(body + off, frame->hdr.version);
-	off += sizeof(frame->hdr.version);
+	off += pack_be_8(body + off, frame->hdr.msg_id);
+	off += pack_be_8(body + off, frame->hdr.syn);
+	off += pack_be_16(body + off, frame->hdr.node_id);
+	off += pack_be_16(body + off, frame->hdr.sensor_id);
+	off += pack_be_16(body + off, frame->hdr.body_len);
+	off += pack_be_16(body + off, frame->hdr.version);
 
 	memcpy(body + off, frame->body, frame->hdr.body_len);
 	off += frame->hdr.body_len;
@@ -44,8 +36,6 @@ int32_t msg_serialize(struct msg_frame *frame, uint8_t *body, uint16_t len)
 	ret = (int32_t) off;
 
 exit:
-	if (st != MSG_OK)
-		ret = -1;
 
 	return ret;
 }

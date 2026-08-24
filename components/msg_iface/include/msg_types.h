@@ -35,4 +35,14 @@ struct msg_frame {
 	uint8_t body[MSG_MAX_BODY_LEN];
 };
 
+struct light_sample {
+	float    lx;
+	float    wh;
+	float    res;
+	uint16_t raw_lx;
+	uint16_t raw_wh;
+	uint16_t it;
+	uint8_t  gain;
+};
+
 #endif /* MSG_TYPES_H_ */

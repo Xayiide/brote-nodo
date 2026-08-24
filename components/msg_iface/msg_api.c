@@ -7,14 +7,14 @@
 
 #include "net.h"
 
-enum msg_st msg_send_light_sample(float lx, float wh)
+enum msg_st msg_send_light_sample(struct light_sample *sample)
 {
 	enum msg_st      st = MSG_OK;
 	uint8_t          msg[MSG_MAX_FRAME_LEN];
 	struct msg_frame frame;
-	uint32_t frame_len;
+	int32_t frame_len;
 
-	st = msg_build_light_sample(&frame, lx, wh);
+	st = msg_build_light_sample(&frame, sample);
 	if (st != MSG_OK)
 		goto exit;
 

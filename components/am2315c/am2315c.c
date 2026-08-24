@@ -103,7 +103,7 @@ void am2315c_add_dev(uint8_t addr, uint16_t period_ms)
 			dev->start_ticks = xTaskGetTickCount();
 			dev->limit_ticks = pdMS_TO_TICKS(period_ms);
 			am2315c.ndevs++;
-			ESP_LOGI(TAG, "Añadido dispositivo. Dir: %d", addr);
+			ESP_LOGI(TAG, "Añadido dispositivo. Dir: 0x%X", addr);
 		}
 	}
 }

@@ -7,21 +7,23 @@
 
 
 enum msg_st msg_build_light_sample(struct msg_frame *frame,
-                                   float lx,
-                                   float wh)
+                                   struct light_sample *sample)
 {
 	enum msg_st st = MSG_OK;
 	size_t off = 0;
 
-	if (frame == NULL) {
+	if (frame == NULL || sample == NULL) {
 		st = MSG_ERR_NULL_PARAM;
 		goto exit;
 	}
 
-	pack_be_float(frame->body + off, lx);
-	off += sizeof(float);
-	pack_be_float(frame->body + off, wh);
-	off += sizeof(float);
+	off += pack_be_float(frame->body + off, sample->lx);
+	off += pack_be_float(frame->body + off, sample->wh);
+	off += pack_be_float(frame->body + off, sample->res);
+	off += pack_be_16(frame->body + off, sample->raw_lx);
+	off += pack_be_16(frame->body + off, sample->raw_wh);
+	off += pack_be_16(frame->body + off, sample->it);
+	off += pack_be_8(frame->body + off, sample->gain);
 
 	frame->hdr.msg_id = MSG_TYPE_LIGHT_SAMPLE;
 	frame->hdr.syn = 0; /* TODO */
@@ -46,10 +48,8 @@ enum msg_st msg_build_hum_temp(struct msg_frame *frame,
 		goto exit;
 	}
 
-	pack_be_float(frame->body + off, hum);
-	off += sizeof(float);
-	pack_be_float(frame->body + off, temp);
-	off += sizeof(float);
+	off += pack_be_float(frame->body + off, hum);
+	off += pack_be_float(frame->body + off, temp);
 
 	frame->hdr.msg_id = MSG_TYPE_HUM_TEMP;
 	frame->hdr.syn = 0; /* TODO */

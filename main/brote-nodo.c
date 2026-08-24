@@ -14,6 +14,7 @@
 #include "net.h"
 #include "veml7700.h"
 #include "am2315c.h"
+#include "msg_types.h"
 #include "msg_api.h"
 
 #if !defined(DST_IP)
@@ -29,6 +30,16 @@
 #endif
 
 #define TAG "BROTE-NODO"
+
+void float_to_int_dec(float v, int *integer, int *decimal)
+{
+	*integer = (int) v;
+	*decimal = (int) ((v - *integer) * 10000);
+
+	if (*decimal < 0)
+		*decimal = -(*decimal);
+}
+
 
 void i2c_master_setup(void)
 {
@@ -48,6 +59,8 @@ void i2c_master_setup(void)
 
 void app_main(void)
 {
+	struct light_sample veml_sample;
+
 	ESP_LOGI(TAG, "IP:DATA - %s:%d\n", DST_IP, DATA_PORT);
 	ESP_LOGI(TAG, "IP:LOG  - %s:%d\n", DST_IP, LOG_PORT);
 
@@ -61,56 +74,80 @@ void app_main(void)
 	am2315c_init();
 	am2315c_add_dev(0x38, 2000);
 
-	float lx, wh;
-	int lx_int, lx_dec, wh_int, wh_dec;
+	uint8_t ret;
 
-	float hum, temp;
-	int hum_int, hum_dec, temp_int, temp_dec;
+	uint16_t raw_lx, raw_wh;
+
+	uint16_t it;
+	uint8_t gain;
+
+	float lx;
+	int lx_int, lx_dec;
+
+	float wh;
+	int wh_int, wh_dec;
+
+	float hum;
+	int hum_int, hum_dec;
+
+	float temp;
+	int temp_int, temp_dec;
+
+	float res;
+	int res_int, res_dec;
+
+
+
 
 	while (1) {
 		lx = veml7700_lux(0x10);
 		wh = veml7700_white(0x10);
 
-		lx_int = (int) lx;
-		lx_dec = (int) ((lx - lx_int) * 10000);
-		if (lx_dec < 0)
-			lx_dec = -lx_dec; /* Evitar decimales negativos */
+		ret = veml7700_get_raw(0x10, &raw_lx, &raw_wh);
+		if (ret != 0)
+			continue;
 
-		wh_int = (int) wh;
-		wh_dec = (int) ((wh - wh_int) * 10000);
-		if (wh_dec < 0)
-			wh_dec = -wh_dec;
+		ret = veml7700_get_res(0x10, &res);
+		if (ret != 0)
+			continue;
+
+		ret = veml7700_get_cfg(0x10, &it, &gain);
+		if (ret != 0)
+			continue;
 
 		hum  = am2315c_hum(0x38);
 		temp = am2315c_temp(0x38);
 
-		hum_int = (int) hum;
-		hum_dec = (int) ((hum - hum_int) * 10000);
-		if (hum_dec < 0)
-			hum_dec = -hum_dec;
+		float_to_int_dec(lx, &lx_int, &lx_dec);
+		float_to_int_dec(wh, &wh_int, &wh_dec);
+		float_to_int_dec(res, &res_int, &res_dec);
+		float_to_int_dec(hum, &hum_int, &hum_dec);
+		float_to_int_dec(temp, &temp_int, &temp_dec);
 
-		temp_int = (int) temp;
-		temp_dec = (int) ((temp - temp_int) * 10000);
-		if (temp_dec < 0)
-			temp_dec = -temp_dec;
+		veml_sample.lx     = lx;
+		veml_sample.wh     = wh;
+		veml_sample.res    = res;
+		veml_sample.raw_lx = raw_lx;
+		veml_sample.raw_wh = raw_wh;
+		veml_sample.it     = it;
+		veml_sample.gain   = gain;
 
-        if (wh != 0.0 && lx != 0.0) {
-		    msg_send_light_sample(lx, wh);
-            printf("VEML7700: Sample sent: ");
-        } else {
-            printf("VEML7700: Not sending sample: ");
-        }
-        printf("[ %d.%04d lx] [ %d.%04d wh]\n",
-                lx_int, lx_dec, wh_int, wh_dec);
+		if (wh != 0.0 && lx != 0.0) {
+			msg_send_light_sample(&veml_sample);
+			printf("VEML7700: [res: %d.%04d] [it: %u] [gain: %u] | [lx raw: %u] [wh raw: %u]\n",
+					res_int, res_dec,
+					(unsigned int) it, gain,
+					(unsigned int) raw_lx, (unsigned int) raw_wh);
+			printf("          [%d.%04d lx] [%d.%04d wh]\n",
+					lx_int, lx_dec, wh_int, wh_dec);
+		}
 
-        if (hum != 0.0 && temp != 0.0) {
-		    msg_send_hum_temp(hum, temp);
-            printf("AM2108C : Sample sent: ");
-        } else {
-            printf("AM2108C: Not sending sample: ");
-        }
-        printf("[ %d.%04d %% hum] [ %d.%04d ºC]\n",
-                hum_int, hum_dec, temp_int, temp_dec);
+		if (hum != 0.0 && temp != 0.0) {
+			msg_send_hum_temp(hum, temp);
+			printf("AM2108C : ");
+			printf("[%d.%04d %% hum] [%d.%04d ºC]\n",
+					hum_int, hum_dec, temp_int, temp_dec);
+		}
 
 		vTaskDelay(2000 / portTICK_PERIOD_MS);
 	}

@@ -11,29 +11,45 @@ inline uint32_t bswap32(uint32_t n)
 	     | ((n & 0x000000FFU) << 24);
 }
 
-inline void pack_le_32(uint8_t buf[4], uint32_t v)
+inline size_t pack_le_32(uint8_t buf[4], uint32_t v)
 {
 	memcpy(buf, &v, sizeof(v));
+
+	return sizeof(v);
 }
 
-inline void pack_be_32(uint8_t buf[4], uint32_t v)
+inline size_t pack_be_32(uint8_t buf[4], uint32_t v)
 {
 	v = bswap32(v);
 	memcpy(buf, &v, sizeof(v));
+
+	return sizeof(v);
 }
 
-inline void pack_be_16(uint8_t *buf, uint16_t v)
+inline size_t pack_be_16(uint8_t *buf, uint16_t v)
 {
 	buf[0] = (uint8_t) (v >> 8);
 	buf[1] = (uint8_t) (v & 0xFF);
+
+	return sizeof(v);
 }
 
-inline void pack_be_float(uint8_t *buf, float v)
+inline size_t pack_be_8(uint8_t *buf, uint8_t v)
+{
+	buf[0] = v;
+
+	return sizeof(v);
+}
+
+inline size_t pack_be_float(uint8_t *buf, float v)
 {
 	uint32_t bits;
 
 	memcpy(&bits, &v, sizeof(bits));
+
 	pack_be_32(buf, bits);
+
+	return sizeof(v);
 }
 
 

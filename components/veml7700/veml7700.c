@@ -109,6 +109,8 @@ struct veml7700_dev {
 	TickType_t             limit_ticks;
 	float                  lx;
 	float                  wh;
+	uint16_t               raw_lx;
+	uint16_t               raw_wh;
 };
 
 struct veml7700_cfg {
@@ -187,7 +189,7 @@ void veml7700_add_dev(uint8_t addr, uint16_t period_ms)
 			dev->start_ticks = xTaskGetTickCount();
 			set_and_send_config(&veml7700.devs[veml7700.ndevs]);
 			veml7700.ndevs++;
-			ESP_LOGI(TAG, "Añadido dispositivo. Dir: %d", addr);
+			ESP_LOGI(TAG, "Añadido dispositivo. Dir: 0x%X", addr);
 		}
 	}
 
@@ -263,6 +265,22 @@ uint8_t veml7700_get_res(uint8_t addr, float *r)
 	return res;
 }
 
+uint8_t veml7700_get_raw(uint8_t addr, uint16_t *raw_lx, uint16_t *raw_wh)
+{
+	uint8_t res = 1;
+	uint8_t i;
+
+	for (i = 0; i < veml7700.ndevs; i++) {
+		if (veml7700.devs[i].addr == addr) {
+			res = 0;
+			*raw_lx = veml7700.devs[i].raw_lx;
+			*raw_wh = veml7700.devs[i].raw_wh;
+		}
+	}
+
+	return res;
+}
+
 /* Funciones estáticas */
 
 void main_task(void *p)
@@ -316,6 +334,8 @@ void read_all_devs(void)
 				/* No ha cambiado la config: als_count es válido */
 				read_reg(dev, CMD_WHITE_DATA, &white_count);
 
+				dev->raw_lx = als_count;
+				dev->raw_wh = white_count;
 				dev->lx = als_count   * dev->params.res;
 				dev->wh = white_count * dev->params.res;
 
@@ -330,8 +350,10 @@ void read_all_devs(void)
 			read_reg(dev, CMD_ALS_DATA, &als_count);
 			read_reg(dev, CMD_WHITE_DATA, &white_count);
 
+			dev->raw_lx = als_count;
+			dev->raw_wh = white_count;
 			dev->lx = als_count * dev->params.res;
-			dev->wh = als_count * dev->params.res;
+			dev->wh = white_count * dev->params.res;
 
 			/* Como ya ha pasado el IT_TIME, se vuelve a esperar el tiempo
 			 * normal configurado, corrigiendo la desviación acumulada:
