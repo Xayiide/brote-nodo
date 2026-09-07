@@ -7,20 +7,21 @@
 #include <esp_log.h> /* ESP_LOG */
 #include <esp_err.h> /* esp_err */
 #include <driver/i2c.h> /* i2c */
-#include <portmacro.h> /* TickType_t, portMAX_DELAY */
+#include <portmacro.h> /* TickType_t */
 #include <projdefs.h> /* pdMS_TO_TICKS() */
 
 #include "veml7700.h"
 
 #define TAG "VEML7700"
 
-#define TIMEOUT_US    100000U /* tiempo de espera en microsegundos 0.1 ms */
-#define VEML7700_ADDR 0x10
-#define ALS_COUNT_LO  100
-#define ALS_COUNT_HI  45000
-#define MAX_NUM_DEV   5
-#define RD_PERIOD_MS  1000
-#define NULL_ADDR     0xFF
+#define TIMEOUT_US        100000U /* tiempo de espera en microsegundos 0.1 ms */
+#define VEML7700_ADDR     0x10
+#define ALS_COUNT_LO      100
+#define ALS_COUNT_HI      45000
+#define MAX_NUM_DEV       5
+#define RD_MIN_PERIOD_MS  1000
+#define RD_TOUT_MS        15
+#define NULL_ADDR         0xFF
 
 enum dev_state {
 	DEV_READY_ST,
@@ -105,6 +106,7 @@ struct veml7700_dev {
 	struct veml7700_params params;
 	uint8_t                addr;
 	enum dev_state         st;
+	uint16_t               period_ms;
 	TickType_t             start_ticks;
 	TickType_t             limit_ticks;
 	float                  lx;
@@ -121,9 +123,6 @@ struct veml7700_cfg {
 static struct veml7700_cfg veml7700;
 
 
-static void       main_task(void *p);
-static void       read_all_devs(void);
-static TickType_t get_min_wait(void);
 static bool       autorange(struct veml7700_dev *dev, uint16_t als_count);
 static int8_t     gain_to_idx(enum als_gain gain);
 static int8_t     it_to_idx(enum als_it it);
@@ -154,14 +153,13 @@ void veml7700_init(void)
 		dev = &veml7700.devs[i];
 		dev->addr        = NULL_ADDR;
 		dev->st          = DEV_READY_ST;
+		dev->period_ms   = RD_MIN_PERIOD_MS;
 		dev->start_ticks = xTaskGetTickCount();
-		dev->limit_ticks = pdMS_TO_TICKS(RD_PERIOD_MS);
+		dev->limit_ticks = pdMS_TO_TICKS(RD_MIN_PERIOD_MS);
 		dev->lx          = 0;
 		dev->wh          = 0;
 		get_default_config(dev);
 	}
-
-	xTaskCreate(&main_task, "veml7700_task", 4096, NULL, 1, NULL);
 }
 
 void veml7700_add_dev(uint8_t addr, uint16_t period_ms)
@@ -170,6 +168,11 @@ void veml7700_add_dev(uint8_t addr, uint16_t period_ms)
 	uint8_t i;
 	bool addr_exists = false;
 
+	if (period_ms < RD_MIN_PERIOD_MS) {
+		ESP_LOGE(TAG, "El periodo no puede sr inferior a %d. Ajustado.",
+				(int) RD_MIN_PERIOD_MS);
+		period_ms = RD_MIN_PERIOD_MS;
+	}
 
 	if (veml7700.ndevs >= MAX_NUM_DEV) {
 		ESP_LOGE(TAG, "No se pueden añadir más sensores, máximo alcanzado");
@@ -185,8 +188,9 @@ void veml7700_add_dev(uint8_t addr, uint16_t period_ms)
 		else {
 			dev = &veml7700.devs[veml7700.ndevs];
 			dev->addr = addr;
-			dev->limit_ticks = pdMS_TO_TICKS(period_ms);
+			dev->period_ms = period_ms;
 			dev->start_ticks = xTaskGetTickCount();
+			dev->limit_ticks = pdMS_TO_TICKS(period_ms);
 			set_and_send_config(&veml7700.devs[veml7700.ndevs]);
 			veml7700.ndevs++;
 			ESP_LOGI(TAG, "Añadido dispositivo. Dir: 0x%X", addr);
@@ -281,24 +285,7 @@ uint8_t veml7700_get_raw(uint8_t addr, uint16_t *raw_lx, uint16_t *raw_wh)
 	return res;
 }
 
-/* Funciones estáticas */
-
-void main_task(void *p)
-{
-	TickType_t min_wait;
-
-	for (;;) {
-		min_wait = get_min_wait();
-
-		if (min_wait > 0) {
-			vTaskDelay(min_wait);
-		}
-
-		read_all_devs();
-	}
-}
-
-void read_all_devs(void)
+void veml7700_read_all_devs(void)
 {
 	struct veml7700_dev *dev;
 	uint8_t              cfg_changed;
@@ -339,7 +326,7 @@ void read_all_devs(void)
 				dev->lx = als_count   * dev->params.res;
 				dev->wh = white_count * dev->params.res;
 
-				timer_restart(dev, RD_PERIOD_MS);
+				timer_restart(dev, dev->period_ms);
 				/* No se ha modificado la config: no hace falta cambiar de
 				 * estado ni esperar IT_TIME */
 			}
@@ -365,7 +352,8 @@ void read_all_devs(void)
 			 * si RD_PERIOD_MS es pequeño, la operación desbordaría. Así que
 			 * se calculan los milisegundos restantes */
 			it_ms = it_to_ms(dev->params.it);
-			remaining_ms = (it_ms < RD_PERIOD_MS) ? (RD_PERIOD_MS - it_ms) : 0;
+			remaining_ms = (it_ms < dev->period_ms) ?
+					(dev->period_ms- it_ms) : 0;
 			timer_restart(dev, remaining_ms);
 			dev->st = DEV_READY_ST;
 			break;
@@ -375,10 +363,10 @@ void read_all_devs(void)
 	}
 }
 
-TickType_t get_min_wait(void)
+TickType_t veml7700_get_min_wait(void)
 {
 	struct veml7700_dev *dev;
-	TickType_t min_wait = pdMS_TO_TICKS(RD_PERIOD_MS);
+	TickType_t min_wait = pdMS_TO_TICKS(RD_MIN_PERIOD_MS);
 	TickType_t now, elapsed, remaining;
 	uint8_t    i;
 
@@ -402,6 +390,10 @@ TickType_t get_min_wait(void)
 
 	return min_wait;
 }
+
+
+
+/* Funciones estáticas */
 
 bool autorange(struct veml7700_dev *dev, uint16_t als_count)
 {
@@ -671,7 +663,7 @@ void read_reg(struct veml7700_dev *dev, enum cmd_code reg, uint16_t *v)
 	i2c_master_read(cmd, rx, 2, I2C_MASTER_LAST_NACK);
 	i2c_master_stop(cmd);
 
-	error = i2c_master_cmd_begin(I2C_NUM_0, cmd, 2000 / portTICK_PERIOD_MS);
+	error = i2c_master_cmd_begin(I2C_NUM_0, cmd, pdMS_TO_TICKS(RD_TOUT_MS));
 	if (error != ESP_OK) {
 		ESP_LOGE(TAG, "Error al leer registro: %s", esp_err_to_name(error));
 	}
@@ -698,7 +690,7 @@ void write_reg(struct veml7700_dev *dev, enum cmd_code reg, uint16_t v)
 	i2c_master_write(cmd, tx, 2, false);
 	i2c_master_stop(cmd);
 
-	error = i2c_master_cmd_begin(I2C_NUM_0, cmd, 1000 / portTICK_PERIOD_MS);
+	error = i2c_master_cmd_begin(I2C_NUM_0, cmd, pdMS_TO_TICKS(RD_TOUT_MS));
 	if (error != ESP_OK) {
 		ESP_LOGE(TAG, "Error al escribir registro: %s", esp_err_to_name(error));
 	}

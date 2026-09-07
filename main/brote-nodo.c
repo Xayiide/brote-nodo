@@ -4,7 +4,6 @@
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-//#include <freertos/event_groups.h>
 #include <driver/i2c.h> /* i2c */
 
 
@@ -12,10 +11,9 @@
 
 #include "wifi.h"
 #include "net.h"
-#include "veml7700.h"
-#include "am2315c.h"
 #include "msg_types.h"
 #include "msg_api.h"
+#include "sensor_mgr.h"
 
 #if !defined(DST_IP)
 #error "DST_IP no está definido"
@@ -68,11 +66,8 @@ void app_main(void)
 	net_init(DST_IP, (uint16_t) DATA_PORT, (uint16_t) LOG_PORT);
 
 	i2c_master_setup();
-	veml7700_init();
-	veml7700_add_dev(0x10, 1000);
 
-	am2315c_init();
-	am2315c_add_dev(0x38, 2000);
+	snsmgr_init();
 
 	uint8_t ret;
 

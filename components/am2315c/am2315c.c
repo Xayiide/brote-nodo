@@ -7,18 +7,19 @@
 #include <esp_log.h> /* ESP_LOG */
 #include <esp_err.h> /* esp_err */
 #include <driver/i2c.h> /* i2c */
-#include <portmacro.h> /* TickType_t, portMAX_DELAY */
+#include <portmacro.h> /* TickType_t */
 #include <projdefs.h> /* pdMS_TO_TICKS() */
 
 #include "am2315c.h"
 
 #define TAG "AM2315C"
 
-#define MAX_NUM_DEV  1
-#define NULL_ADDR    0xFF
-#define RD_PERIOD_MS 2000
-#define RD_WAIT_MS   80
-#define ST_BUSY_BIT  (1 << 7) /* 0x80 */
+#define MAX_NUM_DEV      1
+#define NULL_ADDR        0xFF
+#define RD_MIN_PERIOD_MS 2000
+#define RD_WAIT_MS       80
+#define RD_TOUT_MS       15
+#define ST_BUSY_BIT      (1 << 7) /* 0x80 */
 
 
 enum dev_state {
@@ -30,6 +31,7 @@ struct am2315c_dev {
 	uint8_t        addr;
 	enum dev_state st;
 	uint16_t       waited_ms;
+	uint16_t       period_ms;
 	TickType_t     start_ticks;
 	TickType_t     limit_ticks;
 	float          hum;
@@ -43,9 +45,6 @@ struct am2315c_cfg {
 
 static struct am2315c_cfg am2315c;
 
-static void main_task(void *p);
-static void read_all_devs(void);
-static TickType_t get_min_wait(void);
 static void read_status(struct am2315c_dev *dev, uint8_t *v);
 static void trigger_measurement(struct am2315c_dev *dev);
 static void read_measurement(struct am2315c_dev *dev, uint8_t *v);
@@ -66,13 +65,12 @@ void am2315c_init(void)
 		dev->addr        = NULL_ADDR;
 		dev->st          = DEV_READY_ST;
 		dev->waited_ms   = 0;
-		dev->start_ticks = (TickType_t) 0;
-		dev->limit_ticks = (TickType_t) 0;
+		dev->period_ms   = RD_MIN_PERIOD_MS;
+		dev->start_ticks = xTaskGetTickCount();
+		dev->limit_ticks = pdMS_TO_TICKS(RD_MIN_PERIOD_MS);
 		dev->hum         = 0;
 		dev->temp        = 0;
 	}
-
-	xTaskCreate(&main_task, "am2315c_task", 4096, NULL, 1, NULL);
 }
 
 void am2315c_add_dev(uint8_t addr, uint16_t period_ms)
@@ -81,9 +79,10 @@ void am2315c_add_dev(uint8_t addr, uint16_t period_ms)
 	uint8_t i;
 	bool addr_exists = false;
 
-	if (period_ms < RD_PERIOD_MS) {
-		ESP_LOGE(TAG, "El periodo no puede ser inferior a %d. Ajustado.", (int) RD_PERIOD_MS);
-		period_ms = RD_PERIOD_MS;
+	if (period_ms < RD_MIN_PERIOD_MS) {
+		ESP_LOGE(TAG, "El periodo no puede ser inferior a %d. Ajustado.",
+				(int) RD_MIN_PERIOD_MS);
+		period_ms = RD_MIN_PERIOD_MS;
 	}
 
 	if (am2315c.ndevs >= MAX_NUM_DEV) {
@@ -100,6 +99,7 @@ void am2315c_add_dev(uint8_t addr, uint16_t period_ms)
 		else {
 			dev = &am2315c.devs[am2315c.ndevs];
 			dev->addr = addr;
+			dev->period_ms = period_ms;
 			dev->start_ticks = xTaskGetTickCount();
 			dev->limit_ticks = pdMS_TO_TICKS(period_ms);
 			am2315c.ndevs++;
@@ -140,53 +140,7 @@ float am2315c_temp(uint8_t addr)
 	return res;
 }
 
-
-/* Funciones estáticas */
-
-void main_task(void *p)
-{
-	TickType_t min_wait;
-
-	for (;;) {
-		min_wait = get_min_wait();
-
-		if (min_wait > 0) {
-			vTaskDelay(min_wait);
-		}
-
-		read_all_devs();
-	}
-}
-
-TickType_t get_min_wait(void)
-{
-	struct am2315c_dev *dev;
-	TickType_t min_wait = pdMS_TO_TICKS(RD_PERIOD_MS);
-	TickType_t now, elapsed, remaining;
-	uint8_t    i;
-
-	now = xTaskGetTickCount();
-
-	for (i = 0; i < am2315c.ndevs; i++) {
-		dev = &am2315c.devs[i];
-
-		if (dev->addr == NULL_ADDR)
-			continue;
-
-		elapsed = now - dev->start_ticks;
-		if (elapsed >= dev->limit_ticks)
-			remaining = 0;
-		else
-			remaining = dev->limit_ticks;
-
-		if (remaining < min_wait)
-			min_wait = remaining;
-	}
-
-	return min_wait;
-}
-
-void read_all_devs(void)
+void am2315c_read_all_devs(void)
 {
 	struct am2315c_dev *dev;
 	uint8_t i;
@@ -224,7 +178,7 @@ void read_all_devs(void)
 				parse_measurement(dev, data);
 				/* TODO: calcular desviación causada por esperas y restarla al
 				 * nuevo tiempo de espera. Para esto está dev.waited_ms */
-				timer_restart(dev, RD_PERIOD_MS);
+				timer_restart(dev, dev->period_ms);
 				dev->st = DEV_READY_ST;
 			} else {
 				timer_restart(dev, RD_WAIT_MS);
@@ -236,6 +190,39 @@ void read_all_devs(void)
 
 	}
 }
+
+TickType_t am2315c_get_min_wait(void)
+{
+	struct am2315c_dev *dev;
+	TickType_t min_wait = pdMS_TO_TICKS(RD_MIN_PERIOD_MS);
+	TickType_t now, elapsed, remaining;
+	uint8_t    i;
+
+	now = xTaskGetTickCount();
+
+	for (i = 0; i < am2315c.ndevs; i++) {
+		dev = &am2315c.devs[i];
+
+		if (dev->addr == NULL_ADDR)
+			continue;
+
+		elapsed = now - dev->start_ticks;
+		if (elapsed >= dev->limit_ticks)
+			remaining = 0;
+		else
+			remaining = (dev->limit_ticks - elapsed);
+
+		if (remaining < min_wait)
+			min_wait = remaining;
+	}
+
+	return min_wait;
+}
+
+
+
+
+/* Funciones estáticas */
 
 void read_status(struct am2315c_dev *dev, uint8_t *v)
 {
@@ -253,7 +240,7 @@ void read_status(struct am2315c_dev *dev, uint8_t *v)
 	i2c_master_read(cmd, v, 1, I2C_MASTER_LAST_NACK);
 	i2c_master_stop(cmd);
 
-	error = i2c_master_cmd_begin(I2C_NUM_0, cmd, 2000 / portTICK_PERIOD_MS);
+	error = i2c_master_cmd_begin(I2C_NUM_0, cmd, pdMS_TO_TICKS(RD_TOUT_MS));
 	if (error != ESP_OK) {
 		ESP_LOGE(TAG, "Error al leer registro de estado: %s",
 		    esp_err_to_name(error));
@@ -276,10 +263,14 @@ void trigger_measurement(struct am2315c_dev *dev)
 	i2c_master_write_byte(cmd, 0x00, true);
 	i2c_master_stop(cmd);
 
-	error = i2c_master_cmd_begin(I2C_NUM_0, cmd, 2000 / portTICK_PERIOD_MS);
+	error = i2c_master_cmd_begin(I2C_NUM_0, cmd, pdMS_TO_TICKS(RD_TOUT_MS));
 	if (error != ESP_OK) {
 		ESP_LOGE(TAG, "Error al disparar medición: %s",
 		    esp_err_to_name(error));
+
+		if (error == ESP_ERR_TIMEOUT) {
+
+		}
 	}
 
 	i2c_cmd_link_delete(cmd);
@@ -298,7 +289,7 @@ void read_measurement(struct am2315c_dev *dev, uint8_t *v)
 	i2c_master_read(cmd, v + 6, 1, I2C_MASTER_LAST_NACK);
 	i2c_master_stop(cmd);
 
-	error = i2c_master_cmd_begin(I2C_NUM_0, cmd, 2000 / portTICK_PERIOD_MS);
+	error = i2c_master_cmd_begin(I2C_NUM_0, cmd, pdMS_TO_TICKS(RD_TOUT_MS));
 	if (error != ESP_OK) {
 		ESP_LOGE(TAG, "Error al leer medición: %s", esp_err_to_name(error));
 	}
