@@ -16,10 +16,10 @@
 #define TAG "SNSMGR"
 
 #define VEML7700_ADDR_0 0x10
-#define VEML7700_PERIOD_MS 60000
+#define VEML7700_PERIOD_MS 2000
 
 #define AM2315C_ADDR_0 0x38
-#define AM2315C_PERIOD_MS 60000
+#define AM2315C_PERIOD_MS 2000
 
 struct veml_mgr {
 	uint8_t addrs[VEML7700_MAX_NUM_DEV];
@@ -75,30 +75,33 @@ void snsmgr_init(void)
 
 void main_task(void *p)
 {
-	TickType_t veml_wait, am_wait, min_wait;
+	TickType_t veml_wait, am23_wait, min_wait;
 	uint8_t    i;
 
 	for (;;) {
 		veml_wait = veml7700_get_min_wait();
-		am_wait = am2315c_get_min_wait();
+		am23_wait = am2315c_get_min_wait();
 
-		min_wait = (veml_wait < am_wait) ? veml_wait : am_wait;
+		min_wait = (veml_wait < am23_wait) ? veml_wait : am23_wait;
 
-		if (min_wait > 0)
+		if (min_wait > 0) {
 			vTaskDelay(min_wait);
+		}
 
 		/* Volver a preguntar por si al despertar tras el vTaskDelay
 		 * se ha pasado el temporizador de más de un sensor */
 		if (veml7700_get_min_wait() == 0) {
-			veml7700_read_all_devs();
+			veml7700_poll();
 			for (i = 0; i < snsmgr.veml.num; i++)
-				process_veml7700_dev(snsmgr.veml.addrs[i]);
+				if (veml7700_is_sample_ready(snsmgr.veml.addrs[i]))
+					process_veml7700_dev(snsmgr.veml.addrs[i]);
 		}
 
 		if (am2315c_get_min_wait() == 0) {
-			am2315c_read_all_devs();
+			am2315c_poll();
 			for (i = 0; i < snsmgr.am23.num; i++)
-				process_am2315c_dev(snsmgr.am23.addrs[i]);;
+				if (am2315c_is_sample_ready(snsmgr.am23.addrs[i]))
+					process_am2315c_dev(snsmgr.am23.addrs[i]);
 		}
 	}
 }
@@ -114,19 +117,20 @@ void process_veml7700_dev(uint8_t addr)
 		error = veml7700_get_lux(addr, &msg.lx);
 
 	if (error == ESP_OK)
-		error += veml7700_get_white(addr, &msg.wh);
+		error = veml7700_get_white(addr, &msg.wh);
 
 	if (error == ESP_OK)
-		error += veml7700_get_res(addr, &msg.res);
+		error = veml7700_get_res(addr, &msg.res);
 
 	if (error == ESP_OK)
-		error += veml7700_get_raw(addr, &msg.raw_lx, &msg.raw_wh);
+		error = veml7700_get_raw(addr, &msg.raw_lx, &msg.raw_wh);
 
 	if (error == ESP_OK)
-		error += veml7700_get_cfg(addr, &msg.it, &msg.gain);
+		error = veml7700_get_cfg(addr, &msg.it, &msg.gain);
 
 	if (error == ESP_OK) {
 		msg_send_light_sample(&msg);
+		ESP_LOGD(TAG, "VEML7700: Muestra enviada");
 	} else {
 		ESP_LOGE(TAG, "VEML7700 0x%02X: %s", addr, esp_err_to_name(error));
 	}
@@ -147,6 +151,7 @@ void process_am2315c_dev(uint8_t addr)
 
 	if (error == ESP_OK) {
 		msg_send_hum_temp(&msg);
+		ESP_LOGD(TAG, "AM2315C: Muestra enviada");
 	} else {
 		ESP_LOGE(TAG, "AM2315C 0x%02X: %s", addr, esp_err_to_name(error));
 	}

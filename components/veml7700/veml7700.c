@@ -111,6 +111,7 @@ struct veml7700_dev {
 	uint16_t               raw_lx;
 	uint16_t               raw_wh;
 	esp_err_t              last_err;
+	bool                   sample_ready;
 };
 
 struct veml7700_cfg {
@@ -121,6 +122,9 @@ struct veml7700_cfg {
 static struct veml7700_cfg veml7700;
 
 
+static esp_err_t  poll_dev(struct veml7700_dev *dev);
+static esp_err_t  poll_dev_ready(struct veml7700_dev *dev);
+static esp_err_t  poll_dev_wait_it(struct veml7700_dev *dev);
 static bool       autorange(struct veml7700_dev *dev, uint16_t als_count);
 static int8_t     gain_to_idx(enum als_gain gain);
 static int8_t     it_to_idx(enum als_it it);
@@ -149,16 +153,17 @@ void veml7700_init(void)
 	veml7700.ndevs = 0;
 	for (i = 0; i < VEML7700_MAX_NUM_DEV; i++) {
 		dev = &veml7700.devs[i];
-		dev->addr        = NULL_ADDR;
-		dev->st          = DEV_READY_ST;
-		dev->period_ms   = RD_MIN_PERIOD_MS;
-		dev->start_ticks = xTaskGetTickCount();
-		dev->limit_ticks = pdMS_TO_TICKS(RD_MIN_PERIOD_MS);
-		dev->lx          = 0;
-		dev->wh          = 0;
-		dev->raw_lx      = 0;
-		dev->raw_wh      = 0;
-		dev->last_err    = ESP_FAIL;
+		dev->addr         = NULL_ADDR;
+		dev->st           = DEV_READY_ST;
+		dev->period_ms    = RD_MIN_PERIOD_MS;
+		dev->start_ticks  = xTaskGetTickCount();
+		dev->limit_ticks  = pdMS_TO_TICKS(RD_MIN_PERIOD_MS);
+		dev->lx           = 0;
+		dev->wh           = 0;
+		dev->raw_lx       = 0;
+		dev->raw_wh       = 0;
+		dev->last_err     = ESP_FAIL;
+		dev->sample_ready = false;
 		get_default_config(dev);
 	}
 }
@@ -246,7 +251,7 @@ esp_err_t veml7700_get_white(uint8_t addr, float *wh)
 		if (dev->addr == addr) {
 			found = true;
 			if (dev->last_err == ESP_OK)
-				*wh = dev->lx;
+				*wh = dev->wh;
 			error = dev->last_err;
 		}
 		i++;
@@ -347,13 +352,10 @@ esp_err_t veml7700_get_raw(uint8_t addr, uint16_t *raw_lx, uint16_t *raw_wh)
 	return error;
 }
 
-esp_err_t veml7700_read_all_devs(void)
+esp_err_t veml7700_poll(void)
 {
 	struct veml7700_dev *dev;
-	uint8_t              cfg_changed;
 	uint8_t              i;
-	uint16_t             als_count, white_count;
-	uint32_t             it_ms, remaining_ms;
 	esp_err_t            error = ESP_OK;
 	esp_err_t            last_error = ESP_OK;
 
@@ -365,95 +367,7 @@ esp_err_t veml7700_read_all_devs(void)
 		if (timer_elapsed(dev) == false)
 			continue;
 
-		error = ESP_OK;
-
-		/* Cuando se cambia la configuración, hay que esperar su IT para que
-		 * la lectura sea válida */
-		switch (dev->st) {
-		case DEV_READY_ST:
-			error = read_reg(dev, CMD_ALS_DATA, &als_count);
-			if (error == ESP_OK) {
-				cfg_changed = autorange(dev, als_count);
-				if (cfg_changed) {
-					/* Si ha cambiado la config:
-					 * 1. Configurar el sensor con la nueva config
-					 * 2. Establecer temporizador a esperar IT_TIME y reiniciarlo
-					 * 3. Transitar a estado WAIT_IT
-					 */
-					error = set_and_send_config(dev);
-					if (error == ESP_OK) {
-						timer_restart(dev, it_to_ms(dev->params.it));
-						dev->st = DEV_WAIT_IT_ST;
-					} else {
-						ESP_LOGE(TAG, "[addr: %x] Error enviando la config: %s",
-								dev->addr,
-								esp_err_to_name(error));
-					}
-				} else {
-					/* No ha cambiado la config: als_count es válido */
-					error = read_reg(dev, CMD_WHITE_DATA, &white_count);
-					if (error == ESP_OK) {
-						dev->raw_lx = als_count;
-						dev->raw_wh = white_count;
-						dev->lx = als_count   * dev->params.res;
-						dev->wh = white_count * dev->params.res;
-
-						timer_restart(dev, dev->period_ms);
-						/* No se ha modificado la config: no hace falta cambiar de
-						 * estado ni esperar IT_TIME */
-					} else {
-						ESP_LOGE(TAG, "[addr: %x] Error al leer registro: %s",
-								dev->addr,
-								esp_err_to_name(error));
-					}
-				}
-			} else {
-				ESP_LOGE(TAG, "[addr: %x] Error al leer registro: %s",
-						dev->addr,
-						esp_err_to_name(error));
-			}
-			break;
-		case DEV_WAIT_IT_ST:
-			/* Esperar a ver si ha pasado ya IT_TIME y se puede consumir
-			 * la lectura */
-			error = read_reg(dev, CMD_ALS_DATA, &als_count);
-			if (error == ESP_OK) {
-				error = read_reg(dev, CMD_WHITE_DATA, &white_count);
-			} else {
-				ESP_LOGE(TAG, "[addr: %x] Error al leer registro: %s",
-						dev->addr,
-						esp_err_to_name(error));
-			}
-
-			if (error == ESP_OK) {
-				dev->raw_lx = als_count;
-				dev->raw_wh = white_count;
-				dev->lx = als_count * dev->params.res;
-				dev->wh = white_count * dev->params.res;
-
-				/* Como ya ha pasado el IT_TIME, se vuelve a esperar el tiempo
-				 * normal configurado, corrigiendo la desviación acumulada:
-				 * Si se ha esperado 100MS de IT, y ahora se espera 1000 de tiempo
-				 * configurado, la demora será de 1100 ms en leer, en lugar de
-				 * 1000. Esa desviación se acumula con cada nueva configuración.
-				 * Pero no se puede hacer simplemente
-				 * pit_ms_to_ticks(RD_PERIOD_MS - it_to_ms(dev->params.it)) porque
-				 * si RD_PERIOD_MS es pequeño, la operación desbordaría. Así que
-				 * se calculan los milisegundos restantes */
-				it_ms = it_to_ms(dev->params.it);
-				remaining_ms = (it_ms < dev->period_ms) ?
-						(dev->period_ms- it_ms) : 0;
-				timer_restart(dev, remaining_ms);
-				dev->st = DEV_READY_ST;
-			} else {
-				ESP_LOGE(TAG, "[addr: %x] Error al leer registro: %s",
-						dev->addr,
-						esp_err_to_name(error));
-			}
-			break;
-		default:
-			break;
-		}
+		error = poll_dev(dev);
 
 		dev->last_err = error;
 		if (error != ESP_OK)
@@ -482,7 +396,7 @@ TickType_t veml7700_get_min_wait(void)
 		if (elapsed >= dev->limit_ticks)
 			remaining = 0;
 		else
-			remaining = dev->limit_ticks - elapsed;
+			remaining = (dev->limit_ticks - elapsed);
 
 		if (remaining < min_wait)
 			min_wait = remaining;
@@ -510,8 +424,148 @@ esp_err_t veml7700_get_dev_err(uint8_t addr)
 	return error;
 }
 
+bool veml7700_is_sample_ready(uint8_t addr)
+{
+	struct veml7700_dev *dev;
+	bool    ready = false;
+	uint8_t i     = 0;
+	bool    found = false;
+
+	while ((i < veml7700.ndevs) && (found == false)) {
+		dev = &veml7700.devs[i];
+		if (dev->addr == addr) {
+			found = true;
+			ready = dev->sample_ready;
+		}
+		i++;
+	}
+
+	if (found == false) {
+		ESP_LOGE(TAG, "[is_sample_ready] No existe un dev con la dir. 0x%02X",
+				addr);
+	}
+
+	return ready;
+}
+
 
 /* Funciones estáticas */
+
+esp_err_t poll_dev(struct veml7700_dev *dev)
+{
+	esp_err_t error = ESP_OK;
+
+	dev->sample_ready = false;
+
+	/* Cuando se cambia la configuración, hay que esperar su IT para que
+	 * la lectura sea válida */
+	switch (dev->st) {
+	case DEV_READY_ST:
+		error = poll_dev_ready(dev);
+		break;
+	case DEV_WAIT_IT_ST:
+		error = poll_dev_wait_it(dev);
+		break;
+	default:
+		break;
+	}
+
+	return error;
+}
+
+esp_err_t poll_dev_ready(struct veml7700_dev *dev)
+{
+	esp_err_t error = ESP_OK;
+	uint8_t   cfg_changed;
+	uint16_t  als_count, white_count;
+
+	error = read_reg(dev, CMD_ALS_DATA, &als_count);
+	if (error == ESP_OK) {
+		cfg_changed = autorange(dev, als_count);
+		if (cfg_changed) {
+			/* Si ha cambiado la config:
+			 * 1. Configurar el sensor con la nueva config
+			 * 2. Establecer temporizador a esperar IT_TIME y reiniciarlo
+			 * 3. Transitar a estado WAIT_IT
+			 */
+			error = set_and_send_config(dev);
+			if (error == ESP_OK) {
+				timer_restart(dev, it_to_ms(dev->params.it));
+				dev->st = DEV_WAIT_IT_ST;
+			} else {
+				ESP_LOGE(TAG, "[addr: %x] Error enviando la config: %s",
+						dev->addr,
+						esp_err_to_name(error));
+			}
+		} else {
+			/* No ha cambiado la config: als_count es válido */
+			error = read_reg(dev, CMD_WHITE_DATA, &white_count);
+			if (error == ESP_OK) {
+				dev->raw_lx = als_count;
+				dev->raw_wh = white_count;
+				dev->lx = als_count   * dev->params.res;
+				dev->wh = white_count * dev->params.res;
+				dev->sample_ready = true;
+				timer_restart(dev, dev->period_ms);
+				/* No se ha modificado la config: no hace falta cambiar de
+				 * estado ni esperar IT_TIME */
+			} else {
+				ESP_LOGE(TAG, "[addr: %x] Error al leer registro: %s",
+						dev->addr,
+						esp_err_to_name(error));
+			}
+		}
+	} else {
+		ESP_LOGE(TAG, "[addr: %x] Error al leer registro: %s",
+				dev->addr,
+				esp_err_to_name(error));
+	}
+
+	return error;
+}
+
+esp_err_t poll_dev_wait_it(struct veml7700_dev *dev)
+{
+	esp_err_t error = ESP_OK;
+	uint16_t  als_count, white_count;
+	uint32_t  it_ms, remaining_ms;
+
+	/* Esperar a ver si ha pasado ya IT_TIME y se puede consumir
+	 * la lectura */
+	error = read_reg(dev, CMD_ALS_DATA, &als_count);
+	if (error == ESP_OK) {
+		error = read_reg(dev, CMD_WHITE_DATA, &white_count);
+	}
+
+	if (error == ESP_OK) {
+		dev->raw_lx = als_count;
+		dev->raw_wh = white_count;
+		dev->lx = als_count * dev->params.res;
+		dev->wh = white_count * dev->params.res;
+		dev->sample_ready = true;
+
+		/* Como ya ha pasado el IT_TIME, se vuelve a esperar el tiempo
+		 * normal configurado, corrigiendo la desviación acumulada:
+		 * Si se ha esperado 100MS de IT, y ahora se espera 1000 de tiempo
+		 * configurado, la demora será de 1100 ms en leer, en lugar de
+		 * 1000. Esa desviación se acumula con cada nueva configuración.
+		 * Pero no se puede hacer simplemente
+		 * pit_ms_to_ticks(RD_PERIOD_MS - it_to_ms(dev->params.it)) porque
+		 * si RD_PERIOD_MS es pequeño, la operación desbordaría. Así que
+		 * se calculan los milisegundos restantes */
+		it_ms = it_to_ms(dev->params.it);
+		remaining_ms = (it_ms < dev->period_ms) ?
+				(dev->period_ms- it_ms) : 0;
+		timer_restart(dev, remaining_ms);
+		dev->st = DEV_READY_ST;
+	} else {
+		ESP_LOGE(TAG, "[addr: %x] Error al leer registro: %s",
+				dev->addr,
+				esp_err_to_name(error));
+	}
+
+	return error;
+}
 
 bool autorange(struct veml7700_dev *dev, uint16_t als_count)
 {

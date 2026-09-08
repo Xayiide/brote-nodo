@@ -36,6 +36,7 @@ struct am2315c_dev {
 	float          hum;
 	float          temp;
 	esp_err_t      last_err;
+	bool           sample_ready;
 };
 
 struct am2315c_cfg {
@@ -45,6 +46,9 @@ struct am2315c_cfg {
 
 static struct am2315c_cfg am2315c;
 
+static esp_err_t poll_dev(struct am2315c_dev *dev);
+static esp_err_t poll_dev_ready(struct am2315c_dev *dev);
+static esp_err_t poll_dev_wait(struct am2315c_dev *dev);
 static esp_err_t read_status(struct am2315c_dev *dev, uint8_t *v);
 static esp_err_t trigger_measurement(struct am2315c_dev *dev);
 static esp_err_t read_measurement(struct am2315c_dev *dev, uint8_t *v);
@@ -62,14 +66,15 @@ void am2315c_init(void)
 	am2315c.ndevs = 0;
 	for (i = 0; i < AM2315C_MAX_NUM_DEV; i++) {
 		dev = &am2315c.devs[i];
-		dev->addr        = NULL_ADDR;
-		dev->st          = DEV_READY_ST;
-		dev->waited_ms   = 0;
-		dev->period_ms   = RD_MIN_PERIOD_MS;
-		dev->start_ticks = xTaskGetTickCount();
-		dev->limit_ticks = pdMS_TO_TICKS(RD_MIN_PERIOD_MS);
-		dev->hum         = 0;
-		dev->temp        = 0;
+		dev->addr         = NULL_ADDR;
+		dev->st           = DEV_READY_ST;
+		dev->waited_ms    = 0;
+		dev->period_ms    = RD_MIN_PERIOD_MS;
+		dev->start_ticks  = xTaskGetTickCount();
+		dev->limit_ticks  = pdMS_TO_TICKS(RD_MIN_PERIOD_MS);
+		dev->hum          = 0;
+		dev->temp         = 0;
+		dev->sample_ready = false;
 	}
 }
 
@@ -162,12 +167,10 @@ esp_err_t am2315c_get_temp(uint8_t addr, float *temp)
 	return error;
 }
 
-esp_err_t am2315c_read_all_devs(void)
+esp_err_t am2315c_poll(void)
 {
 	struct am2315c_dev *dev;
 	uint8_t   i;
-	uint8_t   st_reg;
-	uint8_t   data[7];
 	esp_err_t error = ESP_OK;
 	esp_err_t last_error = ESP_OK;
 
@@ -179,62 +182,7 @@ esp_err_t am2315c_read_all_devs(void)
 		if (timer_elapsed(dev) == false)
 			continue;
 
-		error = ESP_OK;
-
-		switch (dev->st) {
-		case DEV_READY_ST:
-			/* 1. Mandar comando de leer registro.
-			 * 2. Establecer temporizador a esperar 80 ms
-			 * 3. Transitar a estado WAIT */
-			error = trigger_measurement(dev);
-			if (error == ESP_OK) {
-				timer_restart(dev, RD_WAIT_MS);
-				dev->st = DEV_WAIT_ST;
-			} else {
-				ESP_LOGE(TAG, "[addr: %x] Error al disparar medición: %s",
-						dev->addr,
-						esp_err_to_name(error));
-			}
-			break;
-		case DEV_WAIT_ST:
-			/*
-			 * 1. Leer registro de estado
-			 * 2. Comprobar si el bit 7 está a 0
-			 * 3. Si está a 0, leer los datos,
-			 * 4. Si no está a 0, esperar otros 80 ms
-			 */
-			dev->waited_ms += RD_WAIT_MS;
-			error = read_status(dev, &st_reg);
-			if ((error == ESP_OK) && ((st_reg & ST_BUSY_BIT) == 0)) {
-				error = read_measurement(dev, data);
-				if (error == ESP_OK) {
-					error = parse_measurement(dev, data);
-				} else {
-					ESP_LOGE(TAG, "[addr: %x] Error al leer medición: %s",
-							dev->addr,
-							esp_err_to_name(error));
-				}
-				/* TODO: calcular desviación causada por esperas y restarla al
-				 * nuevo tiempo de espera. Para esto está dev.waited_ms */
-				if (error == ESP_OK) {
-					timer_restart(dev, dev->period_ms);
-					dev->st = DEV_READY_ST;
-				} else {
-					ESP_LOGE(TAG, "[addr: %x] Error al parsear muestra: %s",
-							dev->addr,
-							esp_err_to_name(error));
-				}
-			} else if (error == ESP_OK){
-				timer_restart(dev, RD_WAIT_MS);
-			} else {
-				ESP_LOGE(TAG, "[addr: %x] Error al leer registro de estado: %s",
-						dev->addr,
-						esp_err_to_name(error));
-			}
-			break;
-		default:
-			break;
-		}
+		error = poll_dev(dev);
 
 		dev->last_err = error;
 		if (error != ESP_OK)
@@ -291,8 +239,115 @@ esp_err_t am2315c_get_dev_err(uint8_t addr)
 	return error;
 }
 
+bool am2315c_is_sample_ready(uint8_t addr)
+{
+	struct am2315c_dev *dev;
+	bool    ready = false;
+	uint8_t i     = 0;
+	bool    found = false;
+
+	while ((i < am2315c.ndevs) && (found == false)) {
+		dev = &am2315c.devs[i];
+		if (dev->addr == addr) {
+			found = true;
+			ready = dev->sample_ready;
+		}
+		i++;
+	}
+
+	if (found == false) {
+		ESP_LOGE(TAG, "[is_sample_ready] No existe un dev con la dir. 0x%02X",
+				addr);
+	}
+
+	return ready;
+}
 
 /* Funciones estáticas */
+
+esp_err_t poll_dev(struct am2315c_dev *dev)
+{
+	esp_err_t error = ESP_OK;
+
+	dev->sample_ready = false;
+
+	switch (dev->st) {
+	case DEV_READY_ST:
+		error = poll_dev_ready(dev);
+		break;
+	case DEV_WAIT_ST:
+		error = poll_dev_wait(dev);
+		break;
+	default:
+		break;
+	}
+
+	return error;
+}
+
+esp_err_t poll_dev_ready(struct am2315c_dev *dev)
+{
+	esp_err_t error = ESP_OK;
+
+	/* 1. Mandar comando de leer registro.
+	 * 2. Establecer temporizador a esperar 80 ms
+	 * 3. Transitar a estado WAIT */
+	error = trigger_measurement(dev);
+	if (error == ESP_OK) {
+		timer_restart(dev, RD_WAIT_MS);
+		dev->st = DEV_WAIT_ST;
+	} else {
+		ESP_LOGE(TAG, "[addr: %x] Error al disparar medición: %s",
+				dev->addr,
+				esp_err_to_name(error));
+	}
+
+	return error;
+}
+
+esp_err_t poll_dev_wait(struct am2315c_dev *dev)
+{
+	esp_err_t error = ESP_OK;
+	uint8_t   st_reg;
+	uint8_t   data[7];
+
+	/*
+	 * 1. Leer registro de estado
+	 * 2. Comprobar si el bit 7 está a 0
+	 * 3. Si está a 0, leer los datos,
+	 * 4. Si no está a 0, esperar otros 80 ms
+	 */
+	dev->waited_ms += RD_WAIT_MS;
+	error = read_status(dev, &st_reg);
+	if ((error == ESP_OK) && ((st_reg & ST_BUSY_BIT) == 0)) {
+		error = read_measurement(dev, data);
+		if (error == ESP_OK) {
+			error = parse_measurement(dev, data);
+		} else {
+			ESP_LOGE(TAG, "[addr: %x] Error al leer medición: %s",
+					dev->addr,
+					esp_err_to_name(error));
+		}
+		/* TODO: calcular desviación causada por esperas y restarla al
+		 * nuevo tiempo de espera. Para esto está dev.waited_ms */
+		if (error == ESP_OK) {
+			timer_restart(dev, dev->period_ms);
+			dev->st = DEV_READY_ST;
+		} else {
+			ESP_LOGE(TAG, "[addr: %x] Error al parsear muestra: %s",
+					dev->addr,
+					esp_err_to_name(error));
+		}
+	} else if (error == ESP_OK){
+		timer_restart(dev, RD_WAIT_MS);
+	} else {
+		ESP_LOGE(TAG, "[addr: %x] Error al leer registro de estado: %s",
+				dev->addr,
+				esp_err_to_name(error));
+	}
+
+	return error;
+}
 
 esp_err_t read_status(struct am2315c_dev *dev, uint8_t *v)
 {
@@ -387,6 +442,8 @@ esp_err_t parse_measurement(struct am2315c_dev *dev, uint8_t *v)
 					  | ((uint32_t) v[4] << 8)
 					  | ((uint32_t) v[5]);
 			dev->temp = raw_temp * temp_factor - 50;
+
+			dev->sample_ready = true;
 		}
 	}
 
