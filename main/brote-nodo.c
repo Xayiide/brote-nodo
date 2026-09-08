@@ -1,6 +1,4 @@
 #include <stdint.h> /* uint */
-#include <stdio.h> /* TODO Borrar */
-
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -28,16 +26,6 @@
 #endif
 
 #define TAG "BROTE-NODO"
-
-void float_to_int_dec(float v, int *integer, int *decimal)
-{
-	*integer = (int) v;
-	*decimal = (int) ((v - *integer) * 10000);
-
-	if (*decimal < 0)
-		*decimal = -(*decimal);
-}
-
 
 void i2c_master_setup(void)
 {

@@ -352,6 +352,11 @@ esp_err_t veml7700_get_raw(uint8_t addr, uint16_t *raw_lx, uint16_t *raw_wh)
 	return error;
 }
 
+/*
+ * @brief Transita la máquina de estados de cada dispositivo
+ * @param None
+ * @return esp_err_t
+ */
 esp_err_t veml7700_poll(void)
 {
 	struct veml7700_dev *dev;
