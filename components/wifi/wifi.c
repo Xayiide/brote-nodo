@@ -70,6 +70,7 @@ static void event_handler(void* arg, esp_event_base_t ev_base,
 		ESP_LOGW(TAG, "Desconectado, reintentando (%u)", s_retry_num);
 		vTaskDelay(pdMS_TO_TICKS(2000));
 		esp_wifi_connect();
+		s_retry_num++;
 	}
 	else if (ev_base == IP_EVENT && ev_id == IP_EVENT_STA_GOT_IP) {
 		s_state = WIFI_CONNECTED;

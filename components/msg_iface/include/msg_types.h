@@ -45,4 +45,9 @@ struct light_sample {
 	uint8_t  gain;
 };
 
+struct hum_temp_sample {
+	float hum;
+	float temp;
+};
+
 #endif /* MSG_TYPES_H_ */

@@ -14,14 +14,11 @@
 
 #define TAG "VEML7700"
 
-#define TIMEOUT_US        100000U /* tiempo de espera en microsegundos 0.1 ms */
-#define VEML7700_ADDR     0x10
-#define ALS_COUNT_LO      100
-#define ALS_COUNT_HI      45000
-#define MAX_NUM_DEV       5
-#define RD_MIN_PERIOD_MS  1000
-#define RD_TOUT_MS        15
-#define NULL_ADDR         0xFF
+#define ALS_COUNT_LO     100
+#define ALS_COUNT_HI     45000
+#define RD_MIN_PERIOD_MS 1000
+#define RD_TOUT_MS       15
+#define NULL_ADDR        0xFF
 
 enum dev_state {
 	DEV_READY_ST,
@@ -113,10 +110,11 @@ struct veml7700_dev {
 	float                  wh;
 	uint16_t               raw_lx;
 	uint16_t               raw_wh;
+	esp_err_t              last_err;
 };
 
 struct veml7700_cfg {
-	struct veml7700_dev devs[MAX_NUM_DEV];
+	struct veml7700_dev devs[VEML7700_MAX_NUM_DEV];
 	uint8_t ndevs;
 };
 
@@ -127,14 +125,14 @@ static bool       autorange(struct veml7700_dev *dev, uint16_t als_count);
 static int8_t     gain_to_idx(enum als_gain gain);
 static int8_t     it_to_idx(enum als_it it);
 static uint16_t   it_to_ms(enum als_it it);
-static void       set_and_send_config(struct veml7700_dev *dev);
 static void       get_default_config(struct veml7700_dev *dev);
 static int32_t    get_max_illumination(enum als_gain gain, enum als_it it_ms);
 static float      get_resolution(enum als_gain gain, enum als_it it_ms);
-static void       read_reg(struct veml7700_dev *dev,
+static esp_err_t  set_and_send_config(struct veml7700_dev *dev);
+static esp_err_t  read_reg(struct veml7700_dev *dev,
                            enum cmd_code        reg,
                            uint16_t            *v);
-static void       write_reg(struct veml7700_dev *dev,
+static esp_err_t  write_reg(struct veml7700_dev *dev,
                             enum cmd_code        reg,
                             uint16_t             v);
 static inline void timer_restart(struct veml7700_dev *dev, uint32_t limit_ms);
@@ -149,7 +147,7 @@ void veml7700_init(void)
 	struct veml7700_dev *dev;
 
 	veml7700.ndevs = 0;
-	for (i = 0; i < MAX_NUM_DEV; i++) {
+	for (i = 0; i < VEML7700_MAX_NUM_DEV; i++) {
 		dev = &veml7700.devs[i];
 		dev->addr        = NULL_ADDR;
 		dev->st          = DEV_READY_ST;
@@ -158,6 +156,9 @@ void veml7700_init(void)
 		dev->limit_ticks = pdMS_TO_TICKS(RD_MIN_PERIOD_MS);
 		dev->lx          = 0;
 		dev->wh          = 0;
+		dev->raw_lx      = 0;
+		dev->raw_wh      = 0;
+		dev->last_err    = ESP_FAIL;
 		get_default_config(dev);
 	}
 }
@@ -169,12 +170,12 @@ void veml7700_add_dev(uint8_t addr, uint16_t period_ms)
 	bool addr_exists = false;
 
 	if (period_ms < RD_MIN_PERIOD_MS) {
-		ESP_LOGE(TAG, "El periodo no puede sr inferior a %d. Ajustado.",
+		ESP_LOGW(TAG, "El periodo no puede ser inferior a %d. Ajustado.",
 				(int) RD_MIN_PERIOD_MS);
 		period_ms = RD_MIN_PERIOD_MS;
 	}
 
-	if (veml7700.ndevs >= MAX_NUM_DEV) {
+	if (veml7700.ndevs >= VEML7700_MAX_NUM_DEV) {
 		ESP_LOGE(TAG, "No se pueden añadir más sensores, máximo alcanzado");
 	}
 	else {
@@ -183,7 +184,7 @@ void veml7700_add_dev(uint8_t addr, uint16_t period_ms)
 				addr_exists = true;
 
 		if (addr_exists == true) {
-			ESP_LOGE(TAG, "Ya existe un dispositivo con dir. %d", addr);
+			ESP_LOGE(TAG, "Ya existe un dispositivo con dir. 0x%02X", addr);
 		}
 		else {
 			dev = &veml7700.devs[veml7700.ndevs];
@@ -193,7 +194,7 @@ void veml7700_add_dev(uint8_t addr, uint16_t period_ms)
 			dev->limit_ticks = pdMS_TO_TICKS(period_ms);
 			set_and_send_config(&veml7700.devs[veml7700.ndevs]);
 			veml7700.ndevs++;
-			ESP_LOGI(TAG, "Añadido dispositivo. Dir: 0x%X", addr);
+			ESP_LOGI(TAG, "Añadido dispositivo. Dir: 0x%02X", addr);
 		}
 	}
 
@@ -206,92 +207,155 @@ void veml7700_add_dev(uint8_t addr, uint16_t period_ms)
 
 
 
-float veml7700_lux(uint8_t addr)
+esp_err_t veml7700_get_lux(uint8_t addr, float *lx)
 {
-	float res = -1;
-	uint8_t i;
+	struct veml7700_dev *dev;
+	esp_err_t error = ESP_OK;
+	uint8_t   i     = 0;
+	bool      found = false;
 
-	for (i = 0; i < veml7700.ndevs; i++) {
-		if (veml7700.devs[i].addr == addr)
-			res = veml7700.devs[i].lx;
-	}
-
-	if (res == -1)
-		ESP_LOGW(TAG, "No existe un dev con la dir. %d", addr);
-
-	return res;
-}
-
-float veml7700_white(uint8_t addr)
-{
-	float res = -1;
-	uint8_t i;
-
-	for (i = 0; i < veml7700.ndevs; i++) {
-		if (veml7700.devs[i].addr == addr)
-			res = veml7700.devs[i].wh;
-	}
-
-	if (res == -1)
-		ESP_LOGW(TAG, "No existe un dev con la dir. %d", addr);
-
-	return res;
-}
-
-uint8_t veml7700_get_cfg(uint8_t addr, uint16_t *it, uint8_t *gain)
-{
-	uint8_t res = 1;
-	uint8_t i;
-
-	for (i = 0; i < veml7700.ndevs; i++) {
-		if (veml7700.devs[i].addr == addr) {
-			res = 0;
-			*it = it_to_ms(veml7700.devs[i].params.it);
-			*gain = veml7700.devs[i].params.gain;
+	while ((i < veml7700.ndevs) && (found == false)) {
+		dev = &veml7700.devs[i];
+		if (dev->addr == addr) {
+			found = true;
+			if (dev->last_err == ESP_OK)
+				*lx = dev->lx;
+			error = dev->last_err;
 		}
+		i++;
 	}
 
-	return res;
+	if (found == false)
+		ESP_LOGE(TAG, "[get_lux] No existe un dev con la dir. 0x%02X", addr);
+
+	if (error != ESP_OK)
+		ESP_LOGE(TAG, "[get_lux] Error: %s", esp_err_to_name(error));
+
+	return error;
 }
 
-uint8_t veml7700_get_res(uint8_t addr, float *r)
+esp_err_t veml7700_get_white(uint8_t addr, float *wh)
 {
-	uint8_t res = 1;
-	uint8_t i;
+	struct veml7700_dev *dev;
+	esp_err_t error = ESP_OK;
+	uint8_t   i     = 0;
+	bool      found = false;
 
-	for (i = 0; i < veml7700.ndevs; i++) {
-		if (veml7700.devs[i].addr == addr) {
-			res = 0;
-			*r = veml7700.devs[i].params.res;
+	while ((i < veml7700.ndevs) && (found == false)) {
+		dev = &veml7700.devs[i];
+		if (dev->addr == addr) {
+			found = true;
+			if (dev->last_err == ESP_OK)
+				*wh = dev->lx;
+			error = dev->last_err;
 		}
+		i++;
 	}
 
-	return res;
+	if (found == false)
+		ESP_LOGE(TAG, "[get_white] No existe un dev con la dir. 0x%02X", addr);
+
+	if (error != ESP_OK)
+		ESP_LOGE(TAG, "[get_white] Error: %s", esp_err_to_name(error));
+
+	return error;
 }
 
-uint8_t veml7700_get_raw(uint8_t addr, uint16_t *raw_lx, uint16_t *raw_wh)
+esp_err_t veml7700_get_cfg(uint8_t addr, uint16_t *it, uint8_t *gain)
 {
-	uint8_t res = 1;
-	uint8_t i;
+	struct veml7700_dev *dev;
+	esp_err_t error = ESP_OK;
+	uint8_t   i     = 0;
+	bool      found = false;
 
-	for (i = 0; i < veml7700.ndevs; i++) {
-		if (veml7700.devs[i].addr == addr) {
-			res = 0;
-			*raw_lx = veml7700.devs[i].raw_lx;
-			*raw_wh = veml7700.devs[i].raw_wh;
+	while ((i < veml7700.ndevs) && (found == false)) {
+		dev = &veml7700.devs[i];
+		if (dev->addr == addr) {
+			found = true;
+			if (dev->last_err == ESP_OK) {
+				*it = it_to_ms(dev->params.it);
+				*gain = dev->params.gain;
+			}
+			error = dev->last_err;
 		}
+		i++;
 	}
 
-	return res;
+	if (found == false)
+		ESP_LOGE(TAG, "[get_cfg] No existe un dev con la dir. 0x%02X", addr);
+
+	if (error != ESP_OK)
+		ESP_LOGE(TAG, "[get_cfg] Error: %s", esp_err_to_name(error));
+
+	return error;
 }
 
-void veml7700_read_all_devs(void)
+esp_err_t veml7700_get_res(uint8_t addr, float *r)
+{
+	struct veml7700_dev *dev;
+	esp_err_t error = ESP_OK;
+	uint8_t  i      = 0;
+	bool     found  = 0;
+
+	while ((i < veml7700.ndevs) && (found == false)) {
+		dev = &veml7700.devs[i];
+		if (dev->addr == addr) {
+			found = true;
+			if (dev->last_err == ESP_OK) {
+				*r = dev->params.res;
+			}
+			error = dev->last_err;
+		}
+		i++;
+	}
+
+	if (found == false)
+		ESP_LOGE(TAG, "[get_res] No existe un dev con la dir. 0x%02X", addr);
+
+	if (error != ESP_OK)
+		ESP_LOGE(TAG, "[get_res] Error: %s", esp_err_to_name(error));
+
+	return error;
+}
+
+esp_err_t veml7700_get_raw(uint8_t addr, uint16_t *raw_lx, uint16_t *raw_wh)
+{
+	struct veml7700_dev *dev;
+	esp_err_t error = ESP_OK;
+	uint8_t   i     = 0;
+	bool      found = false;
+
+	while ((i < veml7700.ndevs) && (found == false)) {
+		dev = &veml7700.devs[i];
+		if (dev->addr == addr) {
+			found = true;
+			if (dev->last_err == ESP_OK) {
+				*raw_lx = dev->raw_lx;
+				*raw_wh = dev->raw_wh;
+			}
+			error = dev->last_err;
+		}
+		i++;
+	}
+
+	if (found == false)
+		ESP_LOGE(TAG, "[get_raw] No existe un dev con la dir. 0x%02X", addr);
+
+	if (error != ESP_OK)
+		ESP_LOGE(TAG, "[get_raw] Error: %s", esp_err_to_name(error));
+
+	return error;
+}
+
+esp_err_t veml7700_read_all_devs(void)
 {
 	struct veml7700_dev *dev;
 	uint8_t              cfg_changed;
 	uint8_t              i;
 	uint16_t             als_count, white_count;
 	uint32_t             it_ms, remaining_ms;
+	esp_err_t            error = ESP_OK;
+	esp_err_t            last_error = ESP_OK;
 
 	for (i = 0; i < veml7700.ndevs; i++) {
 		dev = &veml7700.devs[i];
@@ -301,66 +365,102 @@ void veml7700_read_all_devs(void)
 		if (timer_elapsed(dev) == false)
 			continue;
 
+		error = ESP_OK;
+
 		/* Cuando se cambia la configuración, hay que esperar su IT para que
 		 * la lectura sea válida */
 		switch (dev->st) {
 		case DEV_READY_ST:
-			read_reg(dev, CMD_ALS_DATA, &als_count);
-			cfg_changed = autorange(dev, als_count);
-			if (cfg_changed) {
-				/* Si ha cambiado la config:
-				 * 1. Configurar el sensor con la nueva config
-				 * 2. Establecer temporizador a esperar IT_TIME y reiniciarlo
-				 * 3. Transitar a estado WAIT_IT
-				 */
-				set_and_send_config(dev);
-				timer_restart(dev, it_to_ms(dev->params.it));
-				dev->st = DEV_WAIT_IT_ST;
-			}
-			else {
-				/* No ha cambiado la config: als_count es válido */
-				read_reg(dev, CMD_WHITE_DATA, &white_count);
+			error = read_reg(dev, CMD_ALS_DATA, &als_count);
+			if (error == ESP_OK) {
+				cfg_changed = autorange(dev, als_count);
+				if (cfg_changed) {
+					/* Si ha cambiado la config:
+					 * 1. Configurar el sensor con la nueva config
+					 * 2. Establecer temporizador a esperar IT_TIME y reiniciarlo
+					 * 3. Transitar a estado WAIT_IT
+					 */
+					error = set_and_send_config(dev);
+					if (error == ESP_OK) {
+						timer_restart(dev, it_to_ms(dev->params.it));
+						dev->st = DEV_WAIT_IT_ST;
+					} else {
+						ESP_LOGE(TAG, "[addr: %x] Error enviando la config: %s",
+								dev->addr,
+								esp_err_to_name(error));
+					}
+				} else {
+					/* No ha cambiado la config: als_count es válido */
+					error = read_reg(dev, CMD_WHITE_DATA, &white_count);
+					if (error == ESP_OK) {
+						dev->raw_lx = als_count;
+						dev->raw_wh = white_count;
+						dev->lx = als_count   * dev->params.res;
+						dev->wh = white_count * dev->params.res;
 
-				dev->raw_lx = als_count;
-				dev->raw_wh = white_count;
-				dev->lx = als_count   * dev->params.res;
-				dev->wh = white_count * dev->params.res;
-
-				timer_restart(dev, dev->period_ms);
-				/* No se ha modificado la config: no hace falta cambiar de
-				 * estado ni esperar IT_TIME */
+						timer_restart(dev, dev->period_ms);
+						/* No se ha modificado la config: no hace falta cambiar de
+						 * estado ni esperar IT_TIME */
+					} else {
+						ESP_LOGE(TAG, "[addr: %x] Error al leer registro: %s",
+								dev->addr,
+								esp_err_to_name(error));
+					}
+				}
+			} else {
+				ESP_LOGE(TAG, "[addr: %x] Error al leer registro: %s",
+						dev->addr,
+						esp_err_to_name(error));
 			}
 			break;
 		case DEV_WAIT_IT_ST:
 			/* Esperar a ver si ha pasado ya IT_TIME y se puede consumir
 			 * la lectura */
-			read_reg(dev, CMD_ALS_DATA, &als_count);
-			read_reg(dev, CMD_WHITE_DATA, &white_count);
+			error = read_reg(dev, CMD_ALS_DATA, &als_count);
+			if (error == ESP_OK) {
+				error = read_reg(dev, CMD_WHITE_DATA, &white_count);
+			} else {
+				ESP_LOGE(TAG, "[addr: %x] Error al leer registro: %s",
+						dev->addr,
+						esp_err_to_name(error));
+			}
 
-			dev->raw_lx = als_count;
-			dev->raw_wh = white_count;
-			dev->lx = als_count * dev->params.res;
-			dev->wh = white_count * dev->params.res;
+			if (error == ESP_OK) {
+				dev->raw_lx = als_count;
+				dev->raw_wh = white_count;
+				dev->lx = als_count * dev->params.res;
+				dev->wh = white_count * dev->params.res;
 
-			/* Como ya ha pasado el IT_TIME, se vuelve a esperar el tiempo
-			 * normal configurado, corrigiendo la desviación acumulada:
-			 * Si se ha esperado 100MS de IT, y ahora se espera 1000 de tiempo
-			 * configurado, la demora será de 1100 ms en leer, en lugar de
-			 * 1000. Esa desviación se acumula con cada nueva configuración.
-			 * Pero no se puede hacer simplemente
-			 * pit_ms_to_ticks(RD_PERIOD_MS - it_to_ms(dev->params.it)) porque
-			 * si RD_PERIOD_MS es pequeño, la operación desbordaría. Así que
-			 * se calculan los milisegundos restantes */
-			it_ms = it_to_ms(dev->params.it);
-			remaining_ms = (it_ms < dev->period_ms) ?
-					(dev->period_ms- it_ms) : 0;
-			timer_restart(dev, remaining_ms);
-			dev->st = DEV_READY_ST;
+				/* Como ya ha pasado el IT_TIME, se vuelve a esperar el tiempo
+				 * normal configurado, corrigiendo la desviación acumulada:
+				 * Si se ha esperado 100MS de IT, y ahora se espera 1000 de tiempo
+				 * configurado, la demora será de 1100 ms en leer, en lugar de
+				 * 1000. Esa desviación se acumula con cada nueva configuración.
+				 * Pero no se puede hacer simplemente
+				 * pit_ms_to_ticks(RD_PERIOD_MS - it_to_ms(dev->params.it)) porque
+				 * si RD_PERIOD_MS es pequeño, la operación desbordaría. Así que
+				 * se calculan los milisegundos restantes */
+				it_ms = it_to_ms(dev->params.it);
+				remaining_ms = (it_ms < dev->period_ms) ?
+						(dev->period_ms- it_ms) : 0;
+				timer_restart(dev, remaining_ms);
+				dev->st = DEV_READY_ST;
+			} else {
+				ESP_LOGE(TAG, "[addr: %x] Error al leer registro: %s",
+						dev->addr,
+						esp_err_to_name(error));
+			}
 			break;
 		default:
 			break;
 		}
+
+		dev->last_err = error;
+		if (error != ESP_OK)
+			last_error = error;
 	}
+
+	return last_error;
 }
 
 TickType_t veml7700_get_min_wait(void)
@@ -391,6 +491,24 @@ TickType_t veml7700_get_min_wait(void)
 	return min_wait;
 }
 
+esp_err_t veml7700_get_dev_err(uint8_t addr)
+{
+	struct veml7700_dev *dev;
+	esp_err_t error = ESP_FAIL;
+	uint8_t   i     = 0;
+	bool      found = false;
+
+	while ((i < veml7700.ndevs) && (found == false)) {
+		dev = &veml7700.devs[i];
+		if (dev->addr == addr) {
+			found = true;
+			error = dev->last_err;
+		}
+		i++;
+	}
+
+	return error;
+}
 
 
 /* Funciones estáticas */
@@ -399,9 +517,12 @@ bool autorange(struct veml7700_dev *dev, uint16_t als_count)
 {
 	enum als_gain old_gain = dev->params.gain;
 	enum als_it old_it = dev->params.it;
-	uint8_t gain_idx = gain_to_idx(dev->params.gain);
-	uint8_t it_idx   = it_to_idx(dev->params.it);
+	int8_t gain_idx = gain_to_idx(dev->params.gain);
+	int8_t it_idx   = it_to_idx(dev->params.it);
 	//uint8 changed  = 0;
+
+	if ((gain_idx < 0) || (it_idx < 0))
+		return false;
 
 	/* Comprobar si la lectura es baja para aumentar la sensibilidad */
 	if (als_count <= ALS_COUNT_LO) {
@@ -439,29 +560,34 @@ bool autorange(struct veml7700_dev *dev, uint16_t als_count)
 
 int8_t gain_to_idx(enum als_gain gain)
 {
-	int8_t  idx = -1;
-	uint8_t i;
+	int8_t  idx   = -1;
+	uint8_t i     = 0;
+	bool    found = false;
 
-	for (i = 0; i < ALS_GAIN_NUM_OPT; i++) {
+	while ((i < ALS_GAIN_NUM_OPT) && (found == false)) {
 		if (gain_values[i] == gain) {
+			found = true;
 			idx = i;
-			break;
 		}
+		i++;
 	}
+
 
 	return idx;
 }
 
 int8_t it_to_idx(enum als_it it)
 {
-	int8_t  idx = -1;
-	uint8_t i;
+	int8_t  idx   = -1;
+	uint8_t i     = 0;
+	bool    found = false;
 
-	for (i = 0; i < ALS_IT_NUM_OPT; i++) {
+	while ((i < ALS_IT_NUM_OPT) && (found == false)) {
 		if (it_values[i] == it) {
+			found = true;
 			idx = i;
-			break;
 		}
+		i++;
 	}
 
 	return idx;
@@ -478,23 +604,6 @@ uint16_t it_to_ms(enum als_it it)
 	case ALS_IT_800MS: return 800;
 	default:           return 800; /* Si it no cuadra: caso más conservador */
 	}
-}
-
-void set_and_send_config(struct veml7700_dev *dev)
-{
-	uint16_t reg_data = 0;
-
-	reg_data = (
-		(dev->params.gain       << 11) |
-		(dev->params.it         <<  6) |
-		(dev->params.pers       <<  4) |
-		(dev->params.int_status <<  1)
-	);
-
-	dev->params.max_lux = get_max_illumination(dev->params.gain, dev->params.it);
-	dev->params.res     = get_resolution(dev->params.gain, dev->params.it);
-
-	write_reg(dev, CMD_ALS_CONFIG, reg_data);
 }
 
 void get_default_config(struct veml7700_dev *dev)
@@ -631,22 +740,27 @@ float get_resolution(enum als_gain gain, enum als_it it_ms)
 	}
 }
 
-inline void timer_restart(struct veml7700_dev *dev, uint32_t limit_ms)
+esp_err_t set_and_send_config(struct veml7700_dev *dev)
 {
-	dev->start_ticks = xTaskGetTickCount();
-	dev->limit_ticks = pdMS_TO_TICKS(limit_ms);
+	esp_err_t error;
+	uint16_t reg_data = 0;
+
+	reg_data = (
+		(dev->params.gain       << 11) |
+		(dev->params.it         <<  6) |
+		(dev->params.pers       <<  4) |
+		(dev->params.int_status <<  1)
+	);
+
+	dev->params.max_lux = get_max_illumination(dev->params.gain, dev->params.it);
+	dev->params.res     = get_resolution(dev->params.gain, dev->params.it);
+
+	error = write_reg(dev, CMD_ALS_CONFIG, reg_data);
+
+	return error;
 }
 
-inline bool timer_elapsed(struct veml7700_dev *dev)
-{
-	bool res;
-
-	res = (xTaskGetTickCount() - dev->start_ticks) >= dev->limit_ticks;
-
-	return res;
-}
-
-void read_reg(struct veml7700_dev *dev, enum cmd_code reg, uint16_t *v)
+esp_err_t read_reg(struct veml7700_dev *dev, enum cmd_code reg, uint16_t *v)
 {
 	esp_err_t        error;
 	i2c_cmd_handle_t cmd;
@@ -664,15 +778,14 @@ void read_reg(struct veml7700_dev *dev, enum cmd_code reg, uint16_t *v)
 	i2c_master_stop(cmd);
 
 	error = i2c_master_cmd_begin(I2C_NUM_0, cmd, pdMS_TO_TICKS(RD_TOUT_MS));
-	if (error != ESP_OK) {
-		ESP_LOGE(TAG, "Error al leer registro: %s", esp_err_to_name(error));
-	}
 
 	*v = (uint16_t) ((rx[1] << 8) | rx[0]);
 	i2c_cmd_link_delete(cmd);
+
+	return error;
 }
 
-void write_reg(struct veml7700_dev *dev, enum cmd_code reg, uint16_t v)
+esp_err_t write_reg(struct veml7700_dev *dev, enum cmd_code reg, uint16_t v)
 {
 	esp_err_t        error;
 	i2c_cmd_handle_t cmd;
@@ -691,9 +804,23 @@ void write_reg(struct veml7700_dev *dev, enum cmd_code reg, uint16_t v)
 	i2c_master_stop(cmd);
 
 	error = i2c_master_cmd_begin(I2C_NUM_0, cmd, pdMS_TO_TICKS(RD_TOUT_MS));
-	if (error != ESP_OK) {
-		ESP_LOGE(TAG, "Error al escribir registro: %s", esp_err_to_name(error));
-	}
 
 	i2c_cmd_link_delete(cmd);
+
+	return error;
+}
+
+inline void timer_restart(struct veml7700_dev *dev, uint32_t limit_ms)
+{
+	dev->start_ticks = xTaskGetTickCount();
+	dev->limit_ticks = pdMS_TO_TICKS(limit_ms);
+}
+
+inline bool timer_elapsed(struct veml7700_dev *dev)
+{
+	bool res;
+
+	res = (xTaskGetTickCount() - dev->start_ticks) >= dev->limit_ticks;
+
+	return res;
 }

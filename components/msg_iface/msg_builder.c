@@ -36,9 +36,8 @@ exit:
 	return st;
 }
 
-enum msg_st msg_build_hum_temp(struct msg_frame *frame,
-                               float hum,
-                               float temp)
+enum msg_st msg_build_hum_temp_sample(struct msg_frame *frame,
+                                      struct hum_temp_sample *sample)
 {
 	enum msg_st st = MSG_OK;
 	size_t off = 0;
@@ -48,8 +47,8 @@ enum msg_st msg_build_hum_temp(struct msg_frame *frame,
 		goto exit;
 	}
 
-	off += pack_be_float(frame->body + off, hum);
-	off += pack_be_float(frame->body + off, temp);
+	off += pack_be_float(frame->body + off, sample->hum);
+	off += pack_be_float(frame->body + off, sample->temp);
 
 	frame->hdr.msg_id = MSG_TYPE_HUM_TEMP;
 	frame->hdr.syn = 0; /* TODO */

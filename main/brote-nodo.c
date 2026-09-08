@@ -58,6 +58,7 @@ void i2c_master_setup(void)
 void app_main(void)
 {
 	struct light_sample veml_sample;
+	struct hum_temp_sample am23_sample;
 
 	ESP_LOGI(TAG, "IP:DATA - %s:%d\n", DST_IP, DATA_PORT);
 	ESP_LOGI(TAG, "IP:LOG  - %s:%d\n", DST_IP, LOG_PORT);
@@ -71,74 +72,52 @@ void app_main(void)
 
 	uint8_t ret;
 
-	uint16_t raw_lx, raw_wh;
-
-	uint16_t it;
-	uint8_t gain;
-
-	float lx;
 	int lx_int, lx_dec;
-
-	float wh;
 	int wh_int, wh_dec;
-
-	float hum;
 	int hum_int, hum_dec;
-
-	float temp;
 	int temp_int, temp_dec;
-
-	float res;
 	int res_int, res_dec;
 
-
-
-
 	while (1) {
-		lx = veml7700_lux(0x10);
-		wh = veml7700_white(0x10);
+		veml7700_get_lux(0x10, &veml_sample.lx);
+		veml7700_get_white(0x10, &veml_sample.wh);
 
-		ret = veml7700_get_raw(0x10, &raw_lx, &raw_wh);
+		ret = veml7700_get_res(0x10, &veml_sample.res);
 		if (ret != 0)
 			continue;
 
-		ret = veml7700_get_res(0x10, &res);
+		ret = veml7700_get_raw(0x10, &veml_sample.raw_lx, &veml_sample.raw_wh);
 		if (ret != 0)
 			continue;
 
-		ret = veml7700_get_cfg(0x10, &it, &gain);
+		ret = veml7700_get_cfg(0x10, &veml_sample.it, &veml_sample.gain);
 		if (ret != 0)
 			continue;
 
-		hum  = am2315c_hum(0x38);
-		temp = am2315c_temp(0x38);
+		am2315c_get_hum(0x38, &am23_sample.hum);
+		am2315c_get_temp(0x38, &am23_sample.temp);
 
-		float_to_int_dec(lx, &lx_int, &lx_dec);
-		float_to_int_dec(wh, &wh_int, &wh_dec);
-		float_to_int_dec(res, &res_int, &res_dec);
-		float_to_int_dec(hum, &hum_int, &hum_dec);
-		float_to_int_dec(temp, &temp_int, &temp_dec);
+		float_to_int_dec(veml_sample.lx, &lx_int, &lx_dec);
+		float_to_int_dec(veml_sample.wh, &wh_int, &wh_dec);
+		float_to_int_dec(veml_sample.res, &res_int, &res_dec);
+		float_to_int_dec(am23_sample.hum, &hum_int, &hum_dec);
+		float_to_int_dec(am23_sample.temp, &temp_int, &temp_dec);
 
-		veml_sample.lx     = lx;
-		veml_sample.wh     = wh;
-		veml_sample.res    = res;
-		veml_sample.raw_lx = raw_lx;
-		veml_sample.raw_wh = raw_wh;
-		veml_sample.it     = it;
-		veml_sample.gain   = gain;
-
-		if (wh != 0.0 && lx != 0.0) {
-			msg_send_light_sample(&veml_sample);
+		if (veml_sample.wh != 0.0 && veml_sample.lx != 0.0) {
+			//msg_send_light_sample(&veml_sample);
 			printf("VEML7700: [res: %d.%04d] [it: %u] [gain: %u] | [lx raw: %u] [wh raw: %u]\n",
-					res_int, res_dec,
-					(unsigned int) it, gain,
-					(unsigned int) raw_lx, (unsigned int) raw_wh);
+					res_int,
+					res_dec,
+					(unsigned int) veml_sample.it,
+					(unsigned int) veml_sample.gain,
+					(unsigned int) veml_sample.raw_lx,
+					(unsigned int) veml_sample.raw_wh);
 			printf("          [%d.%04d lx] [%d.%04d wh]\n",
 					lx_int, lx_dec, wh_int, wh_dec);
 		}
 
-		if (hum != 0.0 && temp != 0.0) {
-			msg_send_hum_temp(hum, temp);
+		if (am23_sample.hum != 0.0 && am23_sample.temp != 0.0) {
+			//msg_send_hum_temp(hum, temp);
 			printf("AM2108C : ");
 			printf("[%d.%04d %% hum] [%d.%04d ºC]\n",
 					hum_int, hum_dec, temp_int, temp_dec);

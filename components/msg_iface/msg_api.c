@@ -30,14 +30,14 @@ exit:
 	return st;
 }
 
-enum msg_st msg_send_hum_temp(float hum, float temp)
+enum msg_st msg_send_hum_temp(struct hum_temp_sample *sample)
 {
 	enum msg_st      st;
 	uint8_t          msg[MSG_MAX_FRAME_LEN];
 	struct msg_frame frame;
 	uint32_t         frame_len;
 
-	st = msg_build_hum_temp(&frame, hum, temp);
+	st = msg_build_hum_temp_sample(&frame, sample);
 	if (st != MSG_OK)
 		goto exit;
 
