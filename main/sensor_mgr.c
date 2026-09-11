@@ -2,7 +2,7 @@
 #include <stddef.h> /* NULL */
 
 #include <FreeRTOS.h> /* Es necesario ponerlo primero */
-#include <task.h> /* xTaskCreate, VTaskDelay */
+#include <task.h> /* xTaskCreate, vTaskDelay */
 #include <esp_log.h> /* ESP_LOG */
 #include <esp_err.h> /* esp_err */
 #include <portmacro.h> /* TickType_t */
@@ -51,7 +51,7 @@ static struct snsmgr_cfg snsmgr = {
 	},
 };
 
-static void main_task(void *p);
+static void snsmgr_task(void *p);
 static void process_veml7700_dev(uint8_t addr);
 static void process_am2315c_dev(uint8_t addr);
 
@@ -68,12 +68,12 @@ void snsmgr_init(void)
 	for (i = 0; i < snsmgr.am23.num; i++)
 		am2315c_add_dev(snsmgr.am23.addrs[i], AM2315C_PERIOD_MS);
 
-	xTaskCreate(&main_task, "snsmgr_task", 4096, NULL, 1, NULL);
+	xTaskCreate(&snsmgr_task, "snsmgr_task", 4096, NULL, 1, NULL);
 }
 
 /* Funciones estáticas */
 
-void main_task(void *p)
+void snsmgr_task(void *p)
 {
 	TickType_t veml_wait, am23_wait, min_wait;
 	uint8_t    i;

@@ -8,7 +8,6 @@
 #include <esp_wifi.h> /* esp_wifi_connect, */
 #include <esp_log.h> /* ESP_LOG */
 
-#include <tcpip_adapter.h> /* tcpip_adapter_init, dhcpc_stop */
 #include <lwip/ip4_addr.h> /* ip4addr_ntoa */
 
 
@@ -39,19 +38,6 @@ enum wifi_state {
 
 static enum wifi_state s_state = WIFI_DISCONNECTED;
 static uint32_t s_retry_num = 0;
-
-static void set_static_ip(void)
-{
-	tcpip_adapter_ip_info_t ip_info;
-
-	tcpip_adapter_dhcpc_stop(TCPIP_ADAPTER_IF_STA);
-
-	IP4_ADDR(&ip_info.ip, 192, 168, 1, 200);
-	IP4_ADDR(&ip_info.gw, 192, 168, 1, 1);
-	IP4_ADDR(&ip_info.netmask, 255, 255, 255, 0);
-
-	tcpip_adapter_set_ip_info(TCPIP_ADAPTER_IF_STA, &ip_info);
-}
 
 static void event_handler(void* arg, esp_event_base_t ev_base,
                                 int32_t ev_id, void* ev_data)
@@ -96,10 +82,6 @@ void wifi_init_sta(void)
 	ESP_LOGI(TAG, "WIFI_SSID: %s | WIFI_PASS: %s", WIFI_SSID, WIFI_PASS);
 
 	s_wifi_event_group = xEventGroupCreate();
-
-	tcpip_adapter_init();
-
-	set_static_ip();
 
 	ESP_ERROR_CHECK(esp_event_loop_create_default());
 	ESP_ERROR_CHECK(esp_wifi_init(&cfg));
