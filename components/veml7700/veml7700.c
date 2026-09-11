@@ -377,6 +377,9 @@ esp_err_t veml7700_poll(void)
 		dev->last_err = error;
 		if (error != ESP_OK)
 			last_error = error;
+
+		if (error != ESP_OK)
+			timer_restart(dev, dev->period_ms);
 	}
 
 	return last_error;
@@ -515,13 +518,13 @@ esp_err_t poll_dev_ready(struct veml7700_dev *dev)
 				/* No se ha modificado la config: no hace falta cambiar de
 				 * estado ni esperar IT_TIME */
 			} else {
-				ESP_LOGE(TAG, "[addr: %x] Error al leer registro: %s",
+				ESP_LOGE(TAG, "[addr: %x] [R:ALS] Error al leer registro: %s",
 						dev->addr,
 						esp_err_to_name(error));
 			}
 		}
 	} else {
-		ESP_LOGE(TAG, "[addr: %x] Error al leer registro: %s",
+		ESP_LOGE(TAG, "[addr: %x] [R:WHT] Error al leer registro: %s",
 				dev->addr,
 				esp_err_to_name(error));
 	}
@@ -564,7 +567,7 @@ esp_err_t poll_dev_wait_it(struct veml7700_dev *dev)
 		timer_restart(dev, remaining_ms);
 		dev->st = DEV_READY_ST;
 	} else {
-		ESP_LOGE(TAG, "[addr: %x] Error al leer registro: %s",
+		ESP_LOGE(TAG, "[addr: %x] [WAIT_IT] Error al leer registro: %s",
 				dev->addr,
 				esp_err_to_name(error));
 	}

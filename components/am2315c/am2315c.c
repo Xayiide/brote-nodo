@@ -187,6 +187,9 @@ esp_err_t am2315c_poll(void)
 		dev->last_err = error;
 		if (error != ESP_OK)
 			last_error = error;
+
+		if (error != ESP_OK)
+			timer_restart(dev, dev->period_ms);
 	}
 
 	return last_error;

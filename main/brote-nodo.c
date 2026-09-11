@@ -7,8 +7,6 @@
 
 #include <esp_log.h> /* ESP_LOG */
 
-#include "wifi.h"
-#include "net.h"
 #include "sensor_mgr.h"
 #include "system_mgr.h"
 
@@ -47,12 +45,10 @@ void app_main(void)
 	ESP_LOGI(TAG, "IP:DATA - %s:%d", DST_IP, DATA_PORT);
 	ESP_LOGI(TAG, "IP:LOG  - %s:%d", DST_IP, LOG_PORT);
 
-	sysmgr_init();
-	//wifi_init_sta();
-
-	net_init(DST_IP, (uint16_t) DATA_PORT, (uint16_t) LOG_PORT);
 	i2c_master_setup();
 
+	sysmgr_init();
+	//wifi_init_sta();
 	snsmgr_init();
 
 

@@ -27,7 +27,6 @@ void net_init(const char *ip, uint16_t data_port, uint16_t log_port)
 	}
 
 	tcpip_adapter_init();
-
 	set_static_ip();
 
 	data_dest.sin_family      = AF_INET;
