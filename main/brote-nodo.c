@@ -3,7 +3,8 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <driver/i2c.h> /* i2c */
-
+#include <portmacro.h> /* TickType_t */
+#include <projdefs.h> /* pdMS_TO_TICKS */
 
 #include <esp_log.h> /* ESP_LOG */
 
@@ -48,9 +49,7 @@ void app_main(void)
 	i2c_master_setup();
 
 	sysmgr_init();
-	//wifi_init_sta();
 	snsmgr_init();
-
 
 	return;
 }

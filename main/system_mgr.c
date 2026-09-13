@@ -10,6 +10,9 @@
 #include "system_mgr.h"
 #include "net.h"
 #include "wifi.h"
+#include "led.h"
+
+#define TAG "SYSMGR"
 
 #define SYSTASK_PERIOD_MS 100
 
@@ -25,9 +28,10 @@ void sysmgr_task(void *p)
 {
 	net_init(DST_IP, (uint16_t) DATA_PORT, (uint16_t) LOG_PORT);
 	wifi_init_sta();
-
+	led_init();
 
 	for (;;) {
+		led_main();
 		vTaskDelay(pdMS_TO_TICKS(SYSTASK_PERIOD_MS));
 	}
 }

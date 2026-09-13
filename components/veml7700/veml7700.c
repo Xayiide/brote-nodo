@@ -451,6 +451,7 @@ bool veml7700_is_sample_ready(uint8_t addr)
 	if (found == false) {
 		ESP_LOGE(TAG, "[is_sample_ready] No existe un dev con la dir. 0x%02X",
 				addr);
+		ready = false; /* Por protección */
 	}
 
 	return ready;

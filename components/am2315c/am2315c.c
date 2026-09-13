@@ -261,6 +261,7 @@ bool am2315c_is_sample_ready(uint8_t addr)
 	if (found == false) {
 		ESP_LOGE(TAG, "[is_sample_ready] No existe un dev con la dir. 0x%02X",
 				addr);
+		ready = false; /* Por protección */
 	}
 
 	return ready;
@@ -468,6 +469,7 @@ inline bool timer_elapsed(struct am2315c_dev *dev)
 	return res;
 }
 
+/* TODO: sacar a system, utils o algo */
 inline uint8_t crc8(const uint8_t *p, uint8_t len)
 {
 	uint8_t crc = 0xFF;
