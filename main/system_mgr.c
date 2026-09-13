@@ -21,18 +21,17 @@ static void sysmgr_task(void *p);
 
 void sysmgr_init(void)
 {
+	wifi_init_sta();
+	led_init();
+
+	msg_send_node_started();
+
 	xTaskCreate(&sysmgr_task, "sysmgr_task", 4096, NULL, 1, NULL);
 }
 
 
 void sysmgr_task(void *p)
 {
-	net_init(DST_IP, (uint16_t) DATA_PORT, (uint16_t) LOG_PORT);
-	wifi_init_sta();
-	led_init();
-
-	msg_send_node_started();
-
 	for (;;) {
 		led_main();
 		vTaskDelay(pdMS_TO_TICKS(SYSTASK_PERIOD_MS));

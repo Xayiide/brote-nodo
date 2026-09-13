@@ -14,7 +14,7 @@ ifeq ($(filter clean menuconfig size,$(MAKECMDGOALS)),)
         NODE := terraza
     endif
 
-    $(foreach var,WIFI_SSID WIFI_PASS DST_IP DATA_PORT LOG_PORT,\
+    $(foreach var,WIFI_SSID WIFI_PASS IP GW SUBMASK DST_IP DATA_PORT LOG_PORT LISTEN_PORT,\
       $(if $(strip $($(var))),,$(error $(var) está vacío o no definido)))
 
     ifeq ($(NODE),terraza)
@@ -29,8 +29,12 @@ endif
 
 export WIFI_SSID
 export WIFI_PASS
+export IP
+export GW
+export SUBMASK
 export DST_IP
 export DATA_PORT
 export LOG_PORT
+export LISTEN_PORT
 
 include $(IDF_PATH)/make/project.mk

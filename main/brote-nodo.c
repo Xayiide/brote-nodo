@@ -8,8 +8,21 @@
 
 #include <esp_log.h> /* ESP_LOG */
 
+#include "network_mgr.h"
 #include "sensor_mgr.h"
 #include "system_mgr.h"
+
+#if !defined(IP)
+#error "IP no está definido"
+#endif
+
+#if !defined(GW)
+#error "GW no está definido"
+#endif
+
+#if !defined(SUBMASK)
+#error "SUBMASK no está definido"
+#endif
 
 #if !defined(DST_IP)
 #error "DST_IP no está definido"
@@ -22,6 +35,11 @@
 #if !defined(LOG_PORT) || LOG_PORT == 0
 #error "LOG_PORT no definido o inválido"
 #endif
+
+#if !defined(LISTEN_PORT) || LISTEN_PORT == 0
+#error "LISTEN_PORT no definido o inválido"
+#endif
+
 
 #define TAG "BROTE-NODO"
 
@@ -48,6 +66,7 @@ void app_main(void)
 
 	i2c_master_setup();
 
+	netmgr_init();
 	sysmgr_init();
 	snsmgr_init();
 
