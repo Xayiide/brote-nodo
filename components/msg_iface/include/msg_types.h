@@ -7,9 +7,9 @@
 #define MSG_MAX_FRAME_LEN (sizeof(struct msg_hdr) + MSG_MAX_BODY_LEN)
 
 enum msg_type {
-	MSG_TYPE_LIGHT_SAMPLE,
-	MSG_TYPE_HUM_TEMP,
-	MSG_TYPE_LOG,
+	MSG_TYPE_LIGHT_SAMPLE = 0,
+	MSG_TYPE_HUM_TEMP = 1,
+	MSG_TYPE_NODE_START = 128,
 };
 
 enum msg_st {

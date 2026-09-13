@@ -60,3 +60,24 @@ enum msg_st msg_build_hum_temp_sample(struct msg_frame *frame,
 exit:
 	return st;
 }
+
+enum msg_st msg_build_node_started(struct msg_frame *frame)
+{
+	enum msg_st st = MSG_OK;
+	size_t off = 0;
+
+	if (frame == NULL) {
+		st = MSG_ERR_NULL_PARAM;
+		goto exit;
+	}
+
+	frame->hdr.msg_id = MSG_TYPE_NODE_START;
+	frame->hdr.syn = 0;
+	frame->hdr.node_id = CFG_NODE_ID;
+	frame->hdr.sensor_id = 0xFF; /* TODO ¿A lo mejor no hace falta `sensor_id` en la cabecera? */
+	frame->hdr.body_len = off;
+	frame->hdr.version = 0;
+
+exit:
+	return st;
+}
