@@ -6,6 +6,7 @@
 #include <esp_log.h> /* ESP_LOG */
 #include <esp_err.h> /* esp_err */
 #include <portmacro.h> /* TickType_t */
+#include <sdkconfig.h>
 
 #include "sensor_mgr.h"
 #include "veml7700.h"
@@ -16,10 +17,8 @@
 #define TAG "SNSMGR"
 
 #define VEML7700_ADDR_0 0x10
-#define VEML7700_PERIOD_MS 2000
 
 #define AM2315C_ADDR_0 0x38
-#define AM2315C_PERIOD_MS 2000
 
 struct veml_mgr {
 	uint8_t addrs[VEML7700_MAX_NUM_DEV];
@@ -63,10 +62,10 @@ void snsmgr_init(void)
 	am2315c_init();
 
 	for (i = 0; i < snsmgr.veml.num; i++)
-		veml7700_add_dev(snsmgr.veml.addrs[i], VEML7700_PERIOD_MS);
+		veml7700_add_dev(snsmgr.veml.addrs[i], CONFIG_VEML7700_PERIOD_MS);
 
 	for (i = 0; i < snsmgr.am23.num; i++)
-		am2315c_add_dev(snsmgr.am23.addrs[i], AM2315C_PERIOD_MS);
+		am2315c_add_dev(snsmgr.am23.addrs[i], CONFIG_AM2315C_PERIOD_MS);
 
 	xTaskCreate(&snsmgr_task, "snsmgr_task", 4096, NULL, 1, NULL);
 }

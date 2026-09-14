@@ -1,6 +1,7 @@
 #include <stddef.h> /* NULL */
 
-#include "node_config.h"
+#include <sdkconfig.h>
+
 #include "msg_builder.h"
 #include "msg_types.h"
 #include "byte_utils.h"
@@ -27,8 +28,8 @@ enum msg_st msg_build_light_sample(struct msg_frame *frame,
 
 	frame->hdr.msg_id = MSG_TYPE_LIGHT_SAMPLE;
 	frame->hdr.syn = 0; /* TODO */
-	frame->hdr.node_id = CFG_NODE_ID;
-	frame->hdr.sensor_id = CFG_SENSOR_ID_LIGHT;
+	frame->hdr.node_id = CONFIG_NODE_ID;
+	frame->hdr.sensor_id = CONFIG_VEML7700_ID;
 	frame->hdr.body_len = off;
 	frame->hdr.version = 0;
 
@@ -52,8 +53,8 @@ enum msg_st msg_build_hum_temp_sample(struct msg_frame *frame,
 
 	frame->hdr.msg_id = MSG_TYPE_HUM_TEMP;
 	frame->hdr.syn = 0; /* TODO */
-	frame->hdr.node_id = CFG_NODE_ID;
-	frame->hdr.sensor_id = CFG_SENSOR_ID_TEMP_HUM;
+	frame->hdr.node_id = CONFIG_NODE_ID;
+	frame->hdr.sensor_id = CONFIG_AM2315C_ID;
 	frame->hdr.body_len = off;
 	frame->hdr.version = 0;
 
@@ -73,7 +74,7 @@ enum msg_st msg_build_node_started(struct msg_frame *frame)
 
 	frame->hdr.msg_id = MSG_TYPE_NODE_START;
 	frame->hdr.syn = 0;
-	frame->hdr.node_id = CFG_NODE_ID;
+	frame->hdr.node_id = CONFIG_NODE_ID;
 	frame->hdr.sensor_id = 0xFF; /* TODO ¿A lo mejor no hace falta `sensor_id` en la cabecera? */
 	frame->hdr.body_len = off;
 	frame->hdr.version = 0;

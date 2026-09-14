@@ -7,39 +7,39 @@
 #include <projdefs.h> /* pdMS_TO_TICKS */
 
 #include <esp_log.h> /* ESP_LOG */
+#include <sdkconfig.h>
 
 #include "network_mgr.h"
 #include "sensor_mgr.h"
 #include "system_mgr.h"
 
-#if !defined(IP)
+#if !defined(CONFIG_NODE_IP)
 #error "IP no está definido"
 #endif
 
-#if !defined(GW)
+#if !defined(CONFIG_NODE_GW)
 #error "GW no está definido"
 #endif
 
-#if !defined(SUBMASK)
+#if !defined(CONFIG_NODE_SUBMASK)
 #error "SUBMASK no está definido"
 #endif
 
-#if !defined(DST_IP)
+#if !defined(CONFIG_NODE_DST_IP)
 #error "DST_IP no está definido"
 #endif
 
-#if !defined(DATA_PORT) || DATA_PORT == 0
+#if !defined(CONFIG_NODE_DATA_PORT) || CONFIG_NODE_DATA_PORT == 0
 #error "DATA_PORT no definido o inválido"
 #endif
 
-#if !defined(LOG_PORT) || LOG_PORT == 0
+#if !defined(CONFIG_NODE_LOG_PORT) || CONFIG_NODE_LOG_PORT == 0
 #error "LOG_PORT no definido o inválido"
 #endif
 
-#if !defined(LISTEN_PORT) || LISTEN_PORT == 0
+#if !defined(CONFIG_NODE_LISTEN_PORT) || CONFIG_NODE_LISTEN_PORT == 0
 #error "LISTEN_PORT no definido o inválido"
 #endif
-
 
 #define TAG "BROTE-NODO"
 
@@ -61,8 +61,10 @@ void i2c_master_setup(void)
 
 void app_main(void)
 {
-	ESP_LOGI(TAG, "IP:DATA - %s:%d", DST_IP, DATA_PORT);
-	ESP_LOGI(TAG, "IP:LOG  - %s:%d", DST_IP, LOG_PORT);
+	ESP_LOGI(TAG, "IP:DATA - %s:%d", CONFIG_NODE_DST_IP,
+	                                 CONFIG_NODE_DATA_PORT);
+	ESP_LOGI(TAG, "IP:LOG  - %s:%d", CONFIG_NODE_DST_IP,
+	                                 CONFIG_NODE_LOG_PORT);
 
 	i2c_master_setup();
 

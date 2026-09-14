@@ -1,0 +1,12 @@
+menu "AM2315C"
+
+config AM2315C_ID
+    int "Identificador del AM2315C"
+    default 2
+
+config AM2315C_PERIOD_MS
+    int "Periodo de muestreo en ms"
+    default 60000
+    range 1000 360000
+
+endmenu

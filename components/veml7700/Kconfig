@@ -1,0 +1,12 @@
+menu "VEML7700"
+
+config VEML7700_ID
+    int "Identificador del VEML7700"
+    default 1
+
+config VEML7700_PERIOD_MS
+    int "Periodo de muestreo en ms"
+    default 60000
+    range 1000 360000
+
+endmenu

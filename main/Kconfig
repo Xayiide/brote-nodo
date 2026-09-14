@@ -1,0 +1,51 @@
+menu "Brote nodo"
+
+config NODE_ID  
+    int "Identificador del nodo"
+    default 0
+
+config NODE_IP
+    string "IP del nodo"
+    default "172.20.10.200"
+    #default "192.168.1.100"
+
+config NODE_GW
+    string "Gateway de la red"
+    default "172.20.10.1"
+    #default "192.168.1.1"
+
+config NODE_SUBMASK
+    string "Mascara de subred"
+    default "255.255.255.0"
+
+config NODE_DST_IP
+    string "IP destino"
+    default "172.20.10.4"
+    #default "192.168.1.148"
+    #default "192.168.1.134"
+
+config NODE_DATA_PORT
+    int "Puerto destino de datos"
+    default 12345
+
+config NODE_LOG_PORT
+    int "Puerto destino de logs"
+    default 54321
+
+config NODE_LISTEN_PORT
+    int "Puerto de escucha"
+    default 35353
+
+choice NODE_LOCATION
+    prompt "Modo del nodo"
+    default NODE_LOCATION_TERRAZA
+
+config NODE_LOCATION_TERRAZA
+    bool "Modo terraza"
+
+config NODE_LOCATION_INTERIOR
+    bool "Modo interior"
+
+endchoice
+
+endmenu

@@ -14,12 +14,13 @@ Para utilizar Eclipse, se tendrá que seguir también sus [instrucciones](https:
 En el directorio raíz tiene que haber un fichero `credentials.mk` donde se definan los siguientes símbolos:
 - `WIFI_SSID`: SSID de la WIFI a la que se conectará el nodo.
 - `WIFI_PASS`: Contraseña de dicha WIFI.
-- `DST_IP`: IP destino a la que enviar datos y logs.
-- `DATA_PORT`: Puerto al que se enviarán los datos.
-- `LOG_PORT`: Puerto al que se enviarán los logs.
 
-# Compilación para diferentes nodos
+# Menuconfig
 
-Dependiendo de la configuración que se quiera dar al nodo, se tendrá que compilar con una bandera diferente. Por defecto, la bandera es "terraza". Para cambiar la bandera, haces:
-1. `make NODE=bandera`, o bien
-2. `make flash NODE=bandera`
+En el menú de configuración hay tres componentes a configurar:
+- `BROTE_NODO`
+- `VEML7700`
+- `AM2315C`
+
+
+Para acceder al menú: `make menuconfig`
