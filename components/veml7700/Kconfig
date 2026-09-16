@@ -1,10 +1,11 @@
 menu "VEML7700"
 
 config VEML7700_0_ENABLE
-    bool "Habilitar instancia 0"
-    default y
+    int "Habilitar instancia 0 (0=no, 1=sí)"
+    default 1
+    range 0 1
 
-if VEML7700_0_ENABLE
+if VEML7700_0_ENABLE = 1
 config VEML7700_0_ID
     int "Identificador"
     default 10
@@ -18,10 +19,11 @@ config VEML7700_0_PERIOD_MS
 endif
 
 config VEML7700_1_ENABLE
-    bool "Habilitar instancia 1"
-    default n
+    int "Habilitar instancia 1 (0=no, 1=sí)"
+    default 0
+    range 0 1
 
-if VEML7700_1_ENABLE
+if VEML7700_1_ENABLE = 1
 config VEML7700_1_ID
     int "Identificador"
     default 11

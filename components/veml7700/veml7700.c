@@ -199,7 +199,8 @@ void veml7700_add_dev(uint8_t addr, uint16_t period_ms)
 			dev->limit_ticks = pdMS_TO_TICKS(period_ms);
 			set_and_send_config(&veml7700.devs[veml7700.ndevs]);
 			veml7700.ndevs++;
-			ESP_LOGI(TAG, "Añadido dispositivo. Dir: 0x%02X", addr);
+			ESP_LOGI(TAG, "Añadido dispositivo. Dir: 0x%02X, periodo: %d ms",
+				addr, period_ms);
 		}
 	}
 

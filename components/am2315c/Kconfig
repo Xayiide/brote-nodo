@@ -1,10 +1,11 @@
 menu "AM2315C"
 
 config AM2315C_0_ENABLE
-    bool "Habilitar instancia 0"
-    default y
+    int "Habilitar instancia 0 (0=no, 1=sí)"
+    default 1
+    range 0 1
 
-if AM2315C_0_ENABLE
+if AM2315C_0_ENABLE = 1
 config AM2315C_0_ID
     int "Identificador"
     default 20
@@ -18,10 +19,11 @@ config AM2315C_0_PERIOD_MS
 endif
 
 config AM2315C_1_ENABLE
-    bool "Habilitar instancia 1"
-    default n
+    int "Habilitar instancia 1 (0=no, 1=sí)"
+    default 0
+    range 0 1
 
-if AM2315C_1_ENABLE
+if AM2315C_1_ENABLE = 1
 config AM2315C_1_ID
     int "Identificador"
     default 21
