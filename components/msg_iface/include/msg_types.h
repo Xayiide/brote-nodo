@@ -24,7 +24,7 @@ struct msg_hdr {
 	uint8_t  msg_id;
 	uint8_t  syn;
 	uint16_t node_id;
-	uint16_t sensor_id;
+	//uint16_t sensor_id;
 	//uint32_t timestamp;
 	uint16_t body_len;
 	uint16_t version;
@@ -36,6 +36,7 @@ struct msg_frame {
 };
 
 struct light_sample {
+	uint16_t sensor_id;
 	float    lx;
 	float    wh;
 	float    res;
@@ -46,8 +47,9 @@ struct light_sample {
 };
 
 struct hum_temp_sample {
-	float hum;
-	float temp;
+	uint16_t sensor_id;
+	float    hum;
+	float    temp;
 };
 
 #endif /* MSG_TYPES_H_ */

@@ -1,5 +1,5 @@
 #include <stdint.h> /* uint */
-#include <stddef.h> /* NULL */
+#include <stddef.h> /* NULL, size_t */
 
 #include <FreeRTOS.h> /* Es necesario ponerlo primero */
 #include <task.h> /* xTaskCreate, vTaskDelay */
@@ -13,59 +13,41 @@
 #include "am2315c.h"
 #include "msg_types.h"
 #include "msg_api.h"
+#include "node_config.h"
 
 #define TAG "SNSMGR"
 
-#define VEML7700_ADDR_0 0x10
-
-#define AM2315C_ADDR_0 0x38
-
-struct veml_mgr {
-	uint8_t addrs[VEML7700_MAX_NUM_DEV];
-	uint8_t num;
-};
-
-struct am23_mgr {
-	uint8_t addrs[AM2315C_MAX_NUM_DEV];
-	uint8_t num;
-};
 
 struct snsmgr_cfg {
-	struct veml_mgr veml;
-	struct am23_mgr am23;
+	const struct sensor_config *veml;
+	const struct sensor_config *am23;
 };
 
 static struct snsmgr_cfg snsmgr = {
-	.veml = {
-		.addrs = {
-			VEML7700_ADDR_0,
-		},
-		.num = 1,
-	},
-	.am23 = {
-		.addrs = {
-			AM2315C_ADDR_0,
-		},
-		.num = 1,
-	},
+#if VEML7700_COUNT > 0
+	.veml = veml7700_cfgs,
+#endif
+#if AM2315C_COUNT > 0
+	.am23 = am2315c_cfgs,
+#endif
 };
 
 static void snsmgr_task(void *p);
-static void process_veml7700_dev(uint8_t addr);
-static void process_am2315c_dev(uint8_t addr);
+static void process_veml7700_dev(const struct sensor_config *dev);
+static void process_am2315c_dev(const struct sensor_config *dev);
 
 void snsmgr_init(void)
 {
-	uint8_t i;
+	int i;
 
 	veml7700_init();
 	am2315c_init();
 
-	for (i = 0; i < snsmgr.veml.num; i++)
-		veml7700_add_dev(snsmgr.veml.addrs[i], CONFIG_VEML7700_PERIOD_MS);
+	for (i = 0; i < VEML7700_COUNT; i++)
+		veml7700_add_dev(snsmgr.veml[i].addr, snsmgr.veml[i].period_ms);
 
-	for (i = 0; i < snsmgr.am23.num; i++)
-		am2315c_add_dev(snsmgr.am23.addrs[i], CONFIG_AM2315C_PERIOD_MS);
+	for (i = 0; i < AM2315C_COUNT; i++)
+		am2315c_add_dev(snsmgr.am23[i].addr, snsmgr.am23[i].period_ms);
 
 	xTaskCreate(&snsmgr_task, "snsmgr_task", 4096, NULL, 1, NULL);
 }
@@ -75,7 +57,7 @@ void snsmgr_init(void)
 void snsmgr_task(void *p)
 {
 	TickType_t veml_wait, am23_wait, min_wait;
-	uint8_t    i;
+	int        i;
 
 	for (;;) {
 		veml_wait = veml7700_get_min_wait();
@@ -91,67 +73,71 @@ void snsmgr_task(void *p)
 		 * se ha pasado el temporizador de más de un sensor */
 		if (veml7700_get_min_wait() == 0) {
 			veml7700_poll();
-			for (i = 0; i < snsmgr.veml.num; i++)
-				if (veml7700_is_sample_ready(snsmgr.veml.addrs[i]))
-					process_veml7700_dev(snsmgr.veml.addrs[i]);
+			for (i = 0; i < VEML7700_COUNT; i++)
+				if (veml7700_is_sample_ready(snsmgr.veml[i].addr))
+					process_veml7700_dev(&(snsmgr.veml[i]));
 		}
 
 		if (am2315c_get_min_wait() == 0) {
 			am2315c_poll();
-			for (i = 0; i < snsmgr.am23.num; i++)
-				if (am2315c_is_sample_ready(snsmgr.am23.addrs[i]))
-					process_am2315c_dev(snsmgr.am23.addrs[i]);
+			for (i = 0; i < AM2315C_COUNT; i++)
+				if (am2315c_is_sample_ready(snsmgr.am23[i].addr))
+					process_am2315c_dev(&(snsmgr.am23[i]));
 		}
 	}
 }
 
-void process_veml7700_dev(uint8_t addr)
+void process_veml7700_dev(const struct sensor_config *dev)
 {
 	struct light_sample msg;
 	esp_err_t error;
 
-	error = veml7700_get_dev_err(addr);
+	error = veml7700_get_dev_err(dev->addr);
 
 	if (error == ESP_OK)
-		error = veml7700_get_lux(addr, &msg.lx);
+		error = veml7700_get_lux(dev->addr, &msg.lx);
 
 	if (error == ESP_OK)
-		error = veml7700_get_white(addr, &msg.wh);
+		error = veml7700_get_white(dev->addr, &msg.wh);
 
 	if (error == ESP_OK)
-		error = veml7700_get_res(addr, &msg.res);
+		error = veml7700_get_res(dev->addr, &msg.res);
 
 	if (error == ESP_OK)
-		error = veml7700_get_raw(addr, &msg.raw_lx, &msg.raw_wh);
+		error = veml7700_get_raw(dev->addr, &msg.raw_lx, &msg.raw_wh);
 
 	if (error == ESP_OK)
-		error = veml7700_get_cfg(addr, &msg.it, &msg.gain);
+		error = veml7700_get_cfg(dev->addr, &msg.it, &msg.gain);
 
 	if (error == ESP_OK) {
+		msg.sensor_id = dev->id;
 		msg_send_light_sample(&msg);
 		ESP_LOGD(TAG, "VEML7700: Muestra enviada");
 	} else {
-		ESP_LOGE(TAG, "VEML7700 0x%02X: %s", addr, esp_err_to_name(error));
+		ESP_LOGE(TAG, "VEML7700 0x%02X: %s",
+			dev->addr, esp_err_to_name(error));
 	}
 }
 
-void process_am2315c_dev(uint8_t addr)
+void process_am2315c_dev(const struct sensor_config *dev)
 {
 	struct hum_temp_sample msg;
 	esp_err_t error;
 
-	error = am2315c_get_dev_err(addr);
+	error = am2315c_get_dev_err(dev->addr);
 
 	if (error == ESP_OK)
-		error = am2315c_get_hum(addr, &msg.hum);
+		error = am2315c_get_hum(dev->addr, &msg.hum);
 
 	if (error == ESP_OK)
-		error = am2315c_get_temp(addr, &msg.temp);
+		error = am2315c_get_temp(dev->addr, &msg.temp);
 
 	if (error == ESP_OK) {
+		msg.sensor_id = dev->id;
 		msg_send_hum_temp(&msg);
 		ESP_LOGD(TAG, "AM2315C: Muestra enviada");
 	} else {
-		ESP_LOGE(TAG, "AM2315C 0x%02X: %s", addr, esp_err_to_name(error));
+		ESP_LOGE(TAG, "AM2315C 0x%02X: %s",
+			dev->addr, esp_err_to_name(error));
 	}
 }
