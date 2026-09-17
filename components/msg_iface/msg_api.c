@@ -75,3 +75,26 @@ enum msg_st msg_send_node_started(void)
 exit:
 	return st;
 }
+
+enum msg_st msg_send_sensor_config(struct sensor_group *sensors, uint8_t num)
+{
+	enum msg_st      st;
+	uint8_t          msg[MSG_MAX_FRAME_LEN];
+	struct msg_frame frame;
+	uint32_t         frame_len;
+
+	st = msg_build_sensor_config(&frame, sensors, num);
+	if (st != MSG_OK)
+		goto exit;
+
+	frame_len = msg_serialize(&frame, msg, sizeof(msg));
+	if (frame_len <= 0) {
+		st = MSG_ERR;
+		goto exit;
+	}
+
+	net_udp_send(msg, frame_len);
+
+exit:
+	return st;
+}

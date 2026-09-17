@@ -13,14 +13,13 @@
 #include "am2315c.h"
 #include "msg_types.h"
 #include "msg_api.h"
-#include "node_config.h"
 
 #define TAG "SNSMGR"
 
 
 struct snsmgr_cfg {
-	const struct sensor_config *veml;
-	const struct sensor_config *am23;
+	const struct sensor_cfg *veml;
+	const struct sensor_cfg *am23;
 };
 
 static struct snsmgr_cfg snsmgr = {
@@ -33,8 +32,9 @@ static struct snsmgr_cfg snsmgr = {
 };
 
 static void snsmgr_task(void *p);
-static void process_veml7700_dev(const struct sensor_config *dev);
-static void process_am2315c_dev(const struct sensor_config *dev);
+static void process_veml7700_dev(const struct sensor_cfg *dev);
+static void process_am2315c_dev(const struct sensor_cfg *dev);
+static void build_and_send_sensor_config(void);
 
 void snsmgr_init(void)
 {
@@ -48,6 +48,8 @@ void snsmgr_init(void)
 
 	for (i = 0; i < AM2315C_COUNT; i++)
 		am2315c_add_dev(snsmgr.am23[i].addr, snsmgr.am23[i].period_ms);
+
+	build_and_send_sensor_config();
 
 	xTaskCreate(&snsmgr_task, "snsmgr_task", 4096, NULL, 1, NULL);
 }
@@ -87,7 +89,7 @@ void snsmgr_task(void *p)
 	}
 }
 
-void process_veml7700_dev(const struct sensor_config *dev)
+void process_veml7700_dev(const struct sensor_cfg *dev)
 {
 	struct light_sample msg;
 	esp_err_t error;
@@ -119,7 +121,7 @@ void process_veml7700_dev(const struct sensor_config *dev)
 	}
 }
 
-void process_am2315c_dev(const struct sensor_config *dev)
+void process_am2315c_dev(const struct sensor_cfg *dev)
 {
 	struct hum_temp_sample msg;
 	esp_err_t error;
@@ -140,4 +142,33 @@ void process_am2315c_dev(const struct sensor_config *dev)
 		ESP_LOGE(TAG, "AM2315C 0x%02X: %s",
 			dev->addr, esp_err_to_name(error));
 	}
+}
+
+void build_and_send_sensor_config(void)
+{
+	struct sensor_data veml_sensors[VEML7700_COUNT];
+	struct sensor_data am23_sensors[AM2315C_COUNT];
+	struct sensor_group sensors[2];
+	uint8_t i;
+
+	_Static_assert(SENSOR_COUNT == VEML7700_COUNT + AM2315C_COUNT,
+	               "SENSOR_COUNT debe cuadrar con el numero de sensores");
+
+	sensors[0].type  = VEML7700_TYPENAME;
+	sensors[0].count = VEML7700_COUNT;
+	sensors[0].items = veml_sensors;
+	for (i = 0; i < VEML7700_COUNT; i++) {
+		sensors[0].items[i].period_ms = snsmgr.veml[i].period_ms;
+		sensors[0].items[i].sensor_id = snsmgr.veml[i].id;
+	}
+
+	sensors[1].type  = AM2315C_TYPENAME;
+	sensors[1].count = AM2315C_COUNT;
+	sensors[1].items = am23_sensors;
+	for (i = 0; i < AM2315C_COUNT; i++) {
+		sensors[1].items[i].period_ms = snsmgr.am23[i].period_ms;
+		sensors[1].items[i].sensor_id = snsmgr.am23[i].id;
+	}
+
+	msg_send_sensor_config(sensors, 2);
 }

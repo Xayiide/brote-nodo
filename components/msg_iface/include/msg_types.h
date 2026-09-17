@@ -3,12 +3,14 @@
 
 #include <stdint.h> /* uint */
 
+#define MSG_MAX_TYPENAME_LEN 20
 #define MSG_MAX_BODY_LEN 255
 #define MSG_MAX_FRAME_LEN (sizeof(struct msg_hdr) + MSG_MAX_BODY_LEN)
 
 enum msg_type {
 	MSG_TYPE_LIGHT_SAMPLE = 0,
 	MSG_TYPE_HUM_TEMP = 1,
+	MSG_TYPE_SENSOR_CONFIG = 65,
 	MSG_TYPE_NODE_START = 128,
 };
 
@@ -18,14 +20,13 @@ enum msg_st {
 	MSG_ERR_NULL_PARAM,
 	MSG_ERR_CRC_MISMATCH,
 	MSG_ERR_UNKNOWN_TYPE,
+	MSG_ERR_TYPENAME_TOO_LONG,
 };
 
 struct msg_hdr {
 	uint8_t  msg_id;
 	uint8_t  syn;
 	uint16_t node_id;
-	//uint16_t sensor_id;
-	//uint32_t timestamp;
 	uint16_t body_len;
 	uint16_t version;
 } __attribute__((packed));
@@ -50,6 +51,18 @@ struct hum_temp_sample {
 	uint16_t sensor_id;
 	float    hum;
 	float    temp;
+};
+
+
+struct sensor_data {
+	uint16_t sensor_id;
+	uint32_t period_ms;
+};
+
+struct sensor_group {
+	const char         *type;
+	struct sensor_data *items;
+	uint8_t             count;
 };
 
 #endif /* MSG_TYPES_H_ */
