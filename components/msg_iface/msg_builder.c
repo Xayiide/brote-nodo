@@ -99,7 +99,7 @@ enum msg_st msg_build_sensor_config(struct msg_frame *frame,
 
 	for (i = 0; i < num; i++) {
 		/* Empaquetar nombre */
-		type_len = strlen(sensors[i].type);
+		type_len = strlen(sensors[i].type) + 1;
 		if (type_len > MSG_MAX_TYPENAME_LEN) {
 			st = MSG_ERR_TYPENAME_TOO_LONG;
 			goto exit;
